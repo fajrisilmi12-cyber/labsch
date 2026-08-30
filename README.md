@@ -173,6 +173,103 @@ python labsch_agent.py --unprotect
 - Administrator privileges for install + first run
 - Internet access to the tunnel URL
 
+## Server setup (from scratch)
+
+### 1. Install cloudflared
+
+The agent reaches the server over HTTPS, so you need a tunnel. We use
+[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+(`cloudflared`) because it's free, no port-forwarding required, and works
+behind any NAT. Install it once per server:
+
+```bash
+# Linux (Debian/Ubuntu) — official .deb from Cloudflare
+curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+sudo dpkg -i /tmp/cloudflared.deb
+cloudflared --version    # verify
+```
+
+Other platforms: see <https://pkg.cloudflare.com/> or the
+[GitHub releases page](https://github.com/cloudflare/cloudflared/releases).
+
+You can use **any** reverse proxy instead of cloudflared (nginx, caddy,
+tailscale, ngrok, etc.) — the only requirement is that the server is
+reachable over HTTPS at a stable URL the agent can poll. Cloudflare is
+just the default because it's free and zero-config.
+
+### 2. Get the server URL
+
+#### Option A: Quick tunnel (development, random URL)
+
+```bash
+# One-time per server boot — gives you a random *.trycloudflare.com URL
+cloudflared tunnel --url http://localhost:8080
+
+# Output:
+# https://random-words-1234.trycloudflare.com
+```
+
+The URL changes every restart. Set it as the `SCHOOL_SERVER_URL`
+environment variable (or in `~/.hermes/.env` if using the Hermes skill).
+
+#### Option B: Named tunnel (production, stable URL)
+
+```bash
+# 1. Login to Cloudflare (browser opens once)
+cloudflared tunnel login
+
+# 2. Create a named tunnel
+cloudflared tunnel create labsch-server
+
+# 3. Configure (~/.cloudflared/config.yml)
+cat > ~/.cloudflared/config.yml <<'YAML'
+tunnel: labsch-server
+credentials-file: /root/.cloudflared/<TUNNEL_ID>.json
+ingress:
+  - hostname: labsch.yourdomain.com
+    service: http://localhost:8080
+  - service: http_status:404
+YAML
+
+# 4. Add DNS record
+cloudflared tunnel route dns labsch-server labsch.yourdomain.com
+
+# 5. Run
+cloudflared tunnel run labsch-server
+```
+
+The URL `https://labsch.yourdomain.com` is now stable. Use this as
+`SCHOOL_SERVER_URL` in production.
+
+### 3. Run the server
+
+```bash
+git clone https://github.com/fajrisilmi12-cyber/labsch
+cd labsch/server
+python3 -m venv venv
+source venv/bin/activate
+pip install fastapi uvicorn psutil pydantic
+# Edit venv/bin/activate or use a wrapper: set SCHOOL_SERVER_URL
+# and SCHOOL_API_TOKEN here.
+python3 api.py
+```
+
+### 4. Set the API token
+
+Generate a random token (UUID):
+
+```bash
+python3 -c "import uuid; print(uuid.uuid4())"
+# e.g. 7f3a9b2e-4d1c-4a8b-9e2f-3b8c7d6e5f4a
+```
+
+Add to the agent's `install.bat` (line `set API_TOKEN=...`) and to the
+server's environment. The agent sends this in the `X-Agent-Token` header
+on every request. Without it, the server returns 401.
+
+For a quick start, embed the token directly in `install.bat`. For
+multi-tenant deployments, generate one token per school.
+
 ## Build (Windows .exe)
 
 To distribute as a single `.exe` instead of Python scripts:

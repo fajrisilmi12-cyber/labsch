@@ -242,9 +242,20 @@ installs just need to answer the two prompts.
   `python3 /tmp/cleanup_clients.py` (only on the server)
 
 **Tunnel URL changed after restart**
-- Cloudflare quick tunnel uses a random subdomain. Use a named tunnel for
-  a stable URL: `cloudflared tunnel --url http://localhost:8080` (or set
-  up a named tunnel via `cloudflared tunnel login` + `cloudflared tunnel create`)
+- Cloudflare quick tunnel uses a random subdomain. To get a stable URL, switch to a named tunnel (one-time setup):
+  ```bash
+  # Install cloudflared (one-time, Debian/Ubuntu)
+  curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+  sudo dpkg -i /tmp/cloudflared.deb
+
+  # Login + create + route + run
+  cloudflared tunnel login
+  cloudflared tunnel create labsch-server
+  cloudflared tunnel route dns labsch-server labsch.yourdomain.com
+  cloudflared tunnel run labsch-server
+  ```
+  After that, `https://labsch.yourdomain.com` is permanent. See
+  `README.md` "Server setup" section for the full guide.
 
 ## File map
 

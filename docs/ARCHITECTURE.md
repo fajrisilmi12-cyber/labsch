@@ -95,13 +95,55 @@ empty) to avoid stale Chromium policy caching.
 
 ## Tunnel
 
-The server listens on `localhost:8080` only (no public binding). The
-`cloudflared` daemon exposes it via a `trycloudflare.com` URL. The URL
-is stored in `~/.hermes/.env` as `SCHOOL_SERVER_URL`.
+The server listens on `localhost:8080` only (no public binding). To expose
+it to the internet, use [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+(`cloudflared`) — a free service that:
 
-For production:
-- Quick tunnel (default): random URL, free, ephemeral
-- Named tunnel: stable URL, free, requires `cloudflared tunnel login` once
+- Requires no port forwarding on your router
+- Works behind any NAT / firewall / CGNAT
+- Gives you HTTPS for free (Cloudflare's certs)
+- Supports a stable URL via "named tunnel" if you have a domain
+
+### Why cloudflared?
+
+Because the alternative — opening port 8080 publicly, registering a
+domain, setting up Let's Encrypt, configuring nginx — is a 2-hour setup
+that needs ongoing maintenance (cert renewal, security headers, DDoS
+protection). `cloudflared` does all of that for free, in one command.
+
+You can use **any** reverse proxy instead. nginx, caddy, tailscale, ngrok,
+bore, frp, serveo — all work. The agent doesn't care, it just needs a
+reachable HTTPS URL.
+
+### Install
+
+Linux (Debian/Ubuntu):
+```bash
+curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+sudo dpkg -i /tmp/cloudflared.deb
+```
+
+Other platforms: <https://pkg.cloudflare.com/> or
+<https://github.com/cloudflare/cloudflared/releases>.
+
+### Quick tunnel (dev, random URL)
+
+```bash
+cloudflared tunnel --url http://localhost:8080
+# Output: https://random-words-1234.trycloudflare.com
+```
+
+### Named tunnel (prod, stable URL)
+
+```bash
+cloudflared tunnel login                      # one-time
+cloudflared tunnel create labsch-server
+cloudflared tunnel route dns labsch-server labsch.yourdomain.com
+cloudflared tunnel run labsch-server          # stable URL
+```
+
+The URL (random or named) is stored in `~/.hermes/.env` as
+`SCHOOL_SERVER_URL`. The agent reads it from the install config.
 
 ## Resource profile
 
