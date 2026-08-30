@@ -96,6 +96,36 @@ schtasks /query /tn LabSCHAgentWatchdog
 # Should show "Ready" status
 ```
 
+## Per-PC overrides
+
+The global config applies to every client by default. A per-PC override
+replaces it for one client only — useful when one teacher PC or a test PC
+needs different access.
+
+```bash
+# Find the client ID
+labschctl clients
+
+# Block YouTube + Roblox only on PC-LAB-01; allow Google there
+labschctl client-config set desktop-abc123 \\
+  --blocked-site youtube.com \\
+  --allowed-site google.com \\
+  --blocked-app RobloxPlayerBeta.exe
+
+# Inspect the override
+labschctl client-config show desktop-abc123
+
+# Remove the override; it inherits global rules again
+labschctl client-config clear desktop-abc123
+```
+
+Override behavior:
+
+- **No override** → client receives the global config.
+- **Override exists** → client receives only its per-PC lists.
+- **Clear override** → client immediately returns to global config on its next heartbeat (within 30 seconds).
+- The global config is never modified by per-PC commands.
+
 ## Uninstall (per PC)
 
 ```powershell

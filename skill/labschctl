@@ -21,6 +21,7 @@ import os
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 from pathlib import Path
 
 
@@ -116,6 +117,26 @@ def cmd_client(args):
         print(json.dumps(c, indent=2))
     else:
         print(f"Client {args.client_id} not found.")
+
+
+def cmd_client_config(args):
+    endpoint = f"/api/clients/{args.client_id}/override"
+    if args.action == "show":
+        print(json.dumps(call("GET", endpoint) or {}, indent=2))
+    elif args.action == "clear":
+        result = call("DELETE", endpoint)
+        if result:
+            print(f"OK: {args.client_id} now inherits global config")
+    elif args.action == "set":
+        body = {
+            "blocked_websites": args.blocked_site or [],
+            "allowed_websites": args.allowed_site or [],
+            "blocked_apps": args.blocked_app or [],
+        }
+        result = call("PUT", endpoint, body)
+        if result:
+            print(f"OK: override saved for {args.client_id}")
+            print(json.dumps(result, indent=2))
 
 
 def cmd_events(args):
@@ -266,6 +287,14 @@ def main():
     p_client = sub.add_parser("client", help="client detail")
     p_client.add_argument("client_id")
     p_client.set_defaults(func=cmd_client)
+
+    p_client_config = sub.add_parser("client-config", help="per-PC blocking override")
+    p_client_config.add_argument("action", choices=["show", "set", "clear"])
+    p_client_config.add_argument("client_id")
+    p_client_config.add_argument("--blocked-site", action="append", help="domain to block (repeatable)")
+    p_client_config.add_argument("--allowed-site", action="append", help="domain to allow (repeatable)")
+    p_client_config.add_argument("--blocked-app", action="append", help="EXE to block (repeatable)")
+    p_client_config.set_defaults(func=cmd_client_config)
 
     p_events = sub.add_parser("events", help="blocked attempts log")
     p_events.add_argument("--hours", type=int, default=24)

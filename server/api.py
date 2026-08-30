@@ -103,6 +103,13 @@ async def heartbeat(req: HeartbeatRequest, _: str = Depends(verify_token)):
         device_id=req.device_id, mac=req.mac,
         display_name=req.display_name, is_test=req.is_test,
     )
+    # Per-client override takes precedence over global config.
+    canonical_id = db.get_canonical_client_id(req.client_id, req.device_id)
+    override = db.get_client_override(canonical_id)
+    if override:
+        cfg = {**cfg, **{k: override[k] for k in
+                         ("blocked_apps", "blocked_websites", "allowed_websites")},
+               "config_version": cfg["config_version"]}
     return HeartbeatResponse(
         config_version=cfg["config_version"],
         blocked_apps=cfg["blocked_apps"],
@@ -128,9 +135,22 @@ class EventRequest(BaseModel):
 async def post_event(req: EventRequest, _: str = Depends(verify_token)):
     eid = db.log_event(req.client_id, req.event_type, req.target, req.details)
     return {"ok": True, "id": eid}
+@app.get("/api/events")
+async def list_events(
+   hours: int = Query(24, ge=1, le=720),
+   client_id: Optional[str] = None,
+   event_type: Optional[str] = None,
+   limit: int = Query(500, ge=1, le=5000),
+   _: str = Depends(verify_token),
+):
+   return db.get_events(hours=hours, client_id=client_id, event_type=event_type, limit=limit)
 
 
-# === Admin endpoints (same auth for now; split later if needed) ===
+@app.get("/api/admin/config")
+async def admin_get_config(_: str = Depends(verify_token)):
+   return db.get_config()
+
+
 @app.get("/api/clients")
 async def list_clients(_: str = Depends(verify_token)):
     return db.get_clients()
@@ -144,20 +164,35 @@ async def client_detail(client_id: str, _: str = Depends(verify_token)):
     return c
 
 
-@app.get("/api/events")
-async def list_events(
-    hours: int = Query(24, ge=1, le=720),
-    client_id: Optional[str] = None,
-    event_type: Optional[str] = None,
-    limit: int = Query(500, ge=1, le=5000),
-    _: str = Depends(verify_token),
-):
-    return db.get_events(hours=hours, client_id=client_id, event_type=event_type, limit=limit)
+@app.get("/api/clients/{client_id}/override")
+async def get_client_override(client_id: str, _: str = Depends(verify_token)):
+    if not db.get_client(client_id):
+        raise HTTPException(status_code=404, detail="client not found")
+    override = db.get_client_override(client_id)
+    return override or {"client_id": client_id, "inherits_global": True,
+                        "blocked_apps": [], "blocked_websites": [], "allowed_websites": []}
 
 
-@app.get("/api/admin/config")
-async def admin_get_config(_: str = Depends(verify_token)):
-    return db.get_config()
+class ClientOverrideRequest(BaseModel):
+    blocked_apps: list[str] = []
+    blocked_websites: list[str] = []
+    allowed_websites: list[str] = []
+
+
+@app.put("/api/clients/{client_id}/override")
+async def set_client_override(client_id: str, req: ClientOverrideRequest,
+                              _: str = Depends(verify_token)):
+    if not db.get_client(client_id):
+        raise HTTPException(status_code=404, detail="client not found")
+    return db.set_client_override(client_id, req.blocked_websites,
+                                  req.allowed_websites, req.blocked_apps)
+
+
+@app.delete("/api/clients/{client_id}/override")
+async def clear_client_override(client_id: str, _: str = Depends(verify_token)):
+    if not db.get_client(client_id):
+        raise HTTPException(status_code=404, detail="client not found")
+    return {"ok": db.clear_client_override(client_id), "inherits_global": True}
 
 
 class FullConfigRequest(BaseModel):

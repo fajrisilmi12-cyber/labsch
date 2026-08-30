@@ -69,6 +69,15 @@ def init_db():
             activated_at REAL
         );
 
+        CREATE TABLE IF NOT EXISTS client_overrides (
+            client_id TEXT PRIMARY KEY,
+            blocked_websites TEXT NOT NULL DEFAULT '[]',
+            allowed_websites TEXT NOT NULL DEFAULT '[]',
+            blocked_apps TEXT NOT NULL DEFAULT '[]',
+            updated_at REAL NOT NULL,
+            updated_by TEXT DEFAULT 'admin'
+        );
+
         CREATE TABLE IF NOT EXISTS active_profile (
             id INTEGER PRIMARY KEY CHECK (id = 1),
             profile_id INTEGER,
@@ -105,6 +114,16 @@ def init_db():
 
 
 # Client operations
+def get_canonical_client_id(client_id: str, device_id: str = None) -> str:
+    """Resolve the stored client ID after device-based de-duplication."""
+    with get_db() as conn:
+        if device_id:
+            row = conn.execute("SELECT client_id FROM clients WHERE device_id = ? ORDER BY last_seen DESC LIMIT 1", (device_id,)).fetchone()
+            if row:
+                return row["client_id"]
+        return client_id
+
+
 def upsert_heartbeat(client_id: str, hostname: str, ip: str, user: str, version: str,
                      device_id: str = None, mac: str = None,
                      display_name: str = None, is_test: bool = None) -> dict:
@@ -345,6 +364,48 @@ def get_profile(profile_id: int = None, name: str = None) -> dict:
         d["allowed_websites"] = json.loads(d["allowed_websites"])
         d["blocked_apps"] = json.loads(d["blocked_apps"])
         return d
+
+
+# Per-client override operations
+def get_client_override(client_id: str) -> dict | None:
+    """Return override with parsed lists, or None when inheriting global."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM client_overrides WHERE client_id = ?", (client_id,)).fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    for key in ("blocked_websites", "allowed_websites", "blocked_apps"):
+        result[key] = json.loads(result[key])
+    return result
+
+
+def set_client_override(client_id: str, blocked_websites: list,
+                        allowed_websites: list, blocked_apps: list,
+                        updated_by: str = "admin") -> dict:
+    """Replace one client's complete override configuration."""
+    now = time.time()
+    with get_db() as conn:
+        conn.execute("""
+            INSERT INTO client_overrides
+                (client_id, blocked_websites, allowed_websites, blocked_apps, updated_at, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(client_id) DO UPDATE SET
+                blocked_websites=excluded.blocked_websites,
+                allowed_websites=excluded.allowed_websites,
+                blocked_apps=excluded.blocked_apps,
+                updated_at=excluded.updated_at,
+                updated_by=excluded.updated_by
+        """, (client_id, json.dumps(blocked_websites), json.dumps(allowed_websites),
+              json.dumps(blocked_apps), now, updated_by))
+    return get_client_override(client_id)
+
+
+def clear_client_override(client_id: str) -> bool:
+    """Remove override; client inherits global config."""
+    with get_db() as conn:
+        cur = conn.execute("DELETE FROM client_overrides WHERE client_id = ?", (client_id,))
+    return cur.rowcount > 0
+
 
 
 def list_profiles() -> list:

@@ -92,6 +92,27 @@ Returns all clients (online + offline). Each:
 
 Returns a single client (404 if not found).
 
+### `GET /api/clients/{client_id}/override`
+
+Returns the override, or `{ "inherits_global": true, ... }` if none exists.
+
+### `PUT /api/clients/{client_id}/override`
+
+Replace the config for one client only:
+```json
+{
+  "blocked_websites": ["youtube.com"],
+  "allowed_websites": ["google.com"],
+  "blocked_apps": ["RobloxPlayerBeta.exe"]
+}
+```
+
+The global config is unchanged. The client receives this override on its next heartbeat.
+
+### `DELETE /api/clients/{client_id}/override`
+
+Remove the per-PC override. The client inherits the global config again.
+
 ## Events
 
 ### `GET /api/events?hours=1&client_id=...&event_type=...&limit=500`
