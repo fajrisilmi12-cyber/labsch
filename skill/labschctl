@@ -277,8 +277,21 @@ def cmd_profile(args):
         return
 
 
+def resolve_client_id(name: str) -> str:
+    """Resolve display_name or hostname to client_id. Falls back to the
+    input itself if no match (assume caller passed a raw client_id)."""
+    clients = call("GET", "/api/clients") or []
+    for c in clients:
+        display = (c.get("display_name") or "").strip()
+        hostname = (c.get("hostname") or "").strip()
+        cid = (c.get("client_id") or "").strip()
+        if name.lower() in (display.lower(), hostname.lower(), cid.lower()):
+            return cid
+    return name  # assume raw client_id
+
+
 def cmd_command(args):
-    cid = args.client_id
+    cid = resolve_client_id(args.client_id)
     if args.action == "cancel":
         result = call("DELETE", f"/api/admin/command/{cid}")
         if result:
