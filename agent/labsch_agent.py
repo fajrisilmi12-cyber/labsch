@@ -93,6 +93,44 @@ def ensure_client_id(cfg: dict) -> str:
     return cid
 
 
+def apply_config(cfg_resp, client, previous_blocked_apps):
+    """Apply config to hosts, browser policy, and IFEO consistently."""
+    blocked_apps = cfg_resp.get("blocked_apps", [])
+    blocked_websites = cfg_resp.get("blocked_websites", [])
+    allowed_websites = cfg_resp.get("allowed_websites", [])
+
+    ok, msg = website_blocker.apply_blocklist(
+        blocked_websites, allowed_websites, log_fn=print
+    )
+
+    if not blocked_websites and not allowed_websites:
+        browser_count = browser_policy.clear_browser_policy(log_fn=print)
+    else:
+        browser_count = browser_policy.apply_browser_policy(
+            blocked_websites, allowed_websites, log_fn=print
+        )
+
+    if blocked_apps:
+        ifeo_count = ifeo_blocker.block_apps_ifeo(blocked_apps, log_fn=print)
+        if ifeo_count:
+            client.log_event("ifeo_applied", f"{ifeo_count} apps")
+    else:
+        blocked_now = ifeo_blocker.list_blocked_apps()
+        for app in blocked_now:
+            ifeo_blocker.unblock_app_via_ifeo(app, log_fn=print)
+        if blocked_now:
+            client.log_event("ifeo_cleared", f"{len(blocked_now)} apps")
+
+    if ok or browser_count > 0 or blocked_apps != previous_blocked_apps:
+        client.log_event(
+            "config_applied",
+            f"v{cfg_resp.get('config_version')}_hosts:{ok}_browsers:{browser_count}"
+        )
+    elif msg:
+        client.log_event("config_apply_failed", msg)
+    return blocked_apps, blocked_websites, allowed_websites
+
+
 def run_loop(cfg: dict) -> None:
     """Main agent loop."""
     client_id = ensure_client_id(cfg)
@@ -141,57 +179,17 @@ def run_loop(cfg: dict) -> None:
                     last_heartbeat = now
                     # Heartbeat response includes config — use it
                     if client.has_config_changed(cfg_resp):
-                        current_blocked_apps = cfg_resp.get("blocked_apps", [])
-                        current_blocked_websites = cfg_resp.get("blocked_websites", [])
-                        current_allowed_websites = cfg_resp.get("allowed_websites", [])
-
-                        # 1. Apply hosts file block (legacy, all browsers)
-                        ok, msg = website_blocker.apply_blocklist(
-                            current_blocked_websites,
-                            current_allowed_websites,
-                            log_fn=print,
+                        current_blocked_apps, current_blocked_websites, current_allowed_websites = apply_config(
+                            cfg_resp, client, current_blocked_apps
                         )
-
-                        # 2. Apply browser policy (Edge/Chrome/Brave — DoH-proof)
-                        # If both blocked and allowed are empty, clear all policy
-                        if not current_blocked_websites and not current_allowed_websites:
-                            browser_count = browser_policy.clear_browser_policy(log_fn=print)
-                        else:
-                            browser_count = browser_policy.apply_browser_policy(
-                                current_blocked_websites,
-                                current_allowed_websites,
-                                log_fn=print,
-                            )
-
-                        # 3. Apply IFEO for app block (un-killable)
-                        if current_blocked_apps:
-                            ifeo_count = ifeo_blocker.block_apps_ifeo(current_blocked_apps, log_fn=print)
-                            if ifeo_count:
-                                client.log_event("ifeo_applied", f"{ifeo_count} apps")
-                        else:
-                            # Unblock all apps: remove all IFEO Debugger entries
-                            blocked_now = ifeo_blocker.list_blocked_apps()
-                            if blocked_now:
-                                for app in blocked_now:
-                                    ifeo_blocker.unblock_app_via_ifeo(app, log_fn=print)
-                                client.log_event("ifeo_cleared", f"{len(blocked_now)} apps")
-
-                        if ok or browser_count > 0:
-                            client.log_event("config_applied",
-                                             f"v{cfg_resp.get('config_version')}_hosts:{ok}_browsers:{browser_count}")
-                        else:
-                            client.log_event("config_apply_failed", msg)
                 # else: server unreachable, will retry next cycle
 
             # Pull config (in case heartbeat didn't return config)
             if now - last_config_pull >= DEFAULT_CONFIG_PULL_INTERVAL:
                 cfg_resp = client.get_config()
                 if cfg_resp and client.has_config_changed(cfg_resp):
-                    current_blocked_apps = cfg_resp.get("blocked_apps", [])
-                    current_blocked_websites = cfg_resp.get("blocked_websites", [])
-                    current_allowed_websites = cfg_resp.get("allowed_websites", [])
-                    website_blocker.apply_blocklist(
-                        current_blocked_websites, current_allowed_websites, log_fn=print
+                    current_blocked_apps, current_blocked_websites, current_allowed_websites = apply_config(
+                        cfg_resp, client, current_blocked_apps
                     )
                 if cfg_resp is not None:
                     last_config_pull = now
