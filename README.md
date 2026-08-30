@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11%20LTSC-blue.svg)]()
-[![Status: v0.1.0](https://img.shields.io/badge/status-v0.1.0--beta-orange.svg)]()
+[![Status: v0.2.0](https://img.shields.io/badge/status-v0.2.0--beta-orange.svg)]()
 
 Centralized Windows lab management for 20+ PCs. Push block/allow rules + app-block policies to lightweight Python agents on each client. The agent runs as a Windows service, can't be killed by students, and identifies each PC by its MAC address (so reinstalls never create duplicate records).
 
@@ -80,7 +80,7 @@ The CLI is at `skill/labschctl` after `pip install` or by symlinking into `~/.he
 
 ## Deploy to a new PC
 
-1. **Download** `labsch-agent-v0.1.0.zip` from the [Releases](../../releases) page.
+1. **Download** `labsch-agent-v0.2.0.zip` from the [Releases](../../releases) page.
 2. **Copy** to a USB drive or directly to the target PC.
 3. **Extract** the zip.
 4. **Right-click `install.bat` → "Run as administrator"**.

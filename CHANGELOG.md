@@ -3,6 +3,53 @@
 All notable changes to LabSCH are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-08-30
+
+### Added
+- Per-PC blocking overrides via `labschctl client-config set/show/clear`
+  (`/api/clients/<id>/override` endpoint)
+- Client name resolver — `labschctl command shutdown TesPC` works as well
+  as `shutdown desktop-3d1knvb-ec8871bc`
+- `display_name` and `is_test` columns on the clients table, surfaced in
+  `labschctl clients`
+- Remote `shutdown` / `restart` command per client
+  (`POST /api/admin/command/<id>?command=shutdown`)
+- `labschctl command shutdown|restart|cancel <pc>`
+- Heartbeat response now includes a `pending_command` field
+- `client_overrides` table on the server
+- Comprehensive Cloudflare tunnel setup guide in README
+  (quick + named tunnel, deb install, troubleshooting)
+
+### Changed
+- `GET /api/config` accepts `client_id` query param so agent pulls return the
+  per-PC override when one exists
+- `apply_config()` helper consolidates hosts / browser policy / IFEO application
+  on the agent; both heartbeat and config-pull paths now go through it
+- Empty live config now also clears browser-policy registry and IFEO Debugger
+  entries (previously only the hosts file was being cleared on unblock)
+- `display_name` is sent in the agent heartbeat and is updated on every install
+
+### Fixed
+- Per-PC overrides were silently overwritten by the global config on the
+  agent's 60-second config pull (fixed by `client_id` on `GET /api/config`)
+- Unblock did not remove `URLBlocklist` / `URLAllowlist` /
+  `DnsOverHttpsMode` / `IncognitoModeAvailability` registry keys
+  (fixed by always running the clear path when lists are empty)
+- Unblock did not remove IFEO Debugger entries (fixed in `apply_config`)
+- `events` table foreign-key constraint caused HTTP 500 on events that
+  arrived before the heartbeat; events are now a historical log without FK
+- `labschctl` `profile` subcommand with a space in the name now URL-encodes
+  the path correctly
+- `client_config set` no longer crashes when the user passes no lists
+- Allowlist exact-domain handling — `.canva.com` no longer matches the bare
+  `canva.com`; the server now stores both forms
+
+### Security
+- No new security notes
+- `SPREADSHEET_ID`-style values are no longer hard-coded in the example
+  references; per-PC config remains token-protected
+- Confirmed no hard-coded credentials in any of the audited repos
+
 ## [0.1.0] - 2026-08-30
 
 ### Added

@@ -31,7 +31,7 @@ import db
 # Init database on import
 db.init_db()
 
-app = FastAPI(title="labsch-manager", version="0.1.0")
+app = FastAPI(title="labsch-manager", version="0.2.0")
 
 # Auth: shared API token
 API_TOKEN = os.environ.get("SCHOOL_API_TOKEN")
