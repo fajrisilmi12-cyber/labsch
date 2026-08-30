@@ -94,6 +94,7 @@ class HeartbeatResponse(BaseModel):
     blocked_websites: list
     allowed_websites: list
     canonical_client_id: str = ""  # The de-duped client_id (may differ from request)
+    pending_command: Optional[str] = None  # "shutdown" / "restart" / None
 
 
 @app.post("/api/heartbeat", response_model=HeartbeatResponse)
@@ -110,12 +111,15 @@ async def heartbeat(req: HeartbeatRequest, _: str = Depends(verify_token)):
         cfg = {**cfg, **{k: override[k] for k in
                          ("blocked_apps", "blocked_websites", "allowed_websites")},
                "config_version": cfg["config_version"]}
+    # Check for pending remote command (shutdown/restart)
+    pending_command = db.get_client_command(canonical_id)
     return HeartbeatResponse(
         config_version=cfg["config_version"],
         blocked_apps=cfg["blocked_apps"],
         blocked_websites=cfg["blocked_websites"],
         allowed_websites=cfg["allowed_websites"],
         canonical_client_id=req.client_id,
+        pending_command=pending_command,
     )
 
 
@@ -168,6 +172,23 @@ async def client_detail(client_id: str, _: str = Depends(verify_token)):
     if not c:
         raise HTTPException(status_code=404, detail="client not found")
     return c
+
+
+@app.post("/api/admin/command/{client_id}")
+async def set_client_command(client_id: str, command: str, _: str = Depends(verify_token)):
+    """Queue a remote command (shutdown/restart) for a specific client."""
+    if not db.get_client(client_id):
+        raise HTTPException(status_code=404, detail="client not found")
+    if command not in db.VALID_COMMANDS:
+        raise HTTPException(status_code=400, detail=f"invalid command: {command}. valid: {db.VALID_COMMANDS}")
+    ok = db.set_client_command(client_id, command)
+    return {"ok": ok, "client_id": client_id, "command": command}
+
+
+@app.delete("/api/admin/command/{client_id}")
+async def clear_client_command(client_id: str, _: str = Depends(verify_token)):
+    ok = db.clear_client_command(client_id)
+    return {"ok": ok, "client_id": client_id}
 
 
 @app.get("/api/clients/{client_id}/override")

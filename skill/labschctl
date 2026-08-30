@@ -277,6 +277,19 @@ def cmd_profile(args):
         return
 
 
+def cmd_command(args):
+    cid = args.client_id
+    if args.action == "cancel":
+        result = call("DELETE", f"/api/admin/command/{cid}")
+        if result:
+            print(f"OK: cancelled pending command for {cid}")
+        return
+    result = call("POST", f"/api/admin/command/{cid}?command={args.action}")
+    if result:
+        print(f"OK: {result.get('command')} queued for {cid}")
+        print("  Agent will execute on next heartbeat (≤30s)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="labschctl — control labsch-manager server")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -325,6 +338,11 @@ def main():
     p_rename.add_argument("client_id", help="current client_id")
     p_rename.add_argument("display_name", help="new display name (e.g. PC-LAB-01)")
     p_rename.set_defaults(func=cmd_rename)
+
+    p_command = sub.add_parser("command", help="remote shutdown/restart a PC")
+    p_command.add_argument("action", choices=["shutdown", "restart", "cancel"])
+    p_command.add_argument("client_id", help="target client ID")
+    p_command.set_defaults(func=cmd_command)
 
     args = parser.parse_args()
     args.func(args)

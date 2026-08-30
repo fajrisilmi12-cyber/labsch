@@ -99,6 +99,9 @@ def init_db():
         if "is_test" not in cols:
             conn.execute("ALTER TABLE clients ADD COLUMN is_test INTEGER DEFAULT 0")
             print("[db] migration: added is_test column")
+        if "pending_command" not in cols:
+            conn.execute("ALTER TABLE clients ADD COLUMN pending_command TEXT DEFAULT NULL")
+            print("[db] migration: added pending_command column")
 
         # 3. Indexes
         conn.executescript("""
@@ -443,3 +446,46 @@ def cleanup_events(older_than_days: int = 30) -> int:
     with get_db() as conn:
         cur = conn.execute("DELETE FROM events WHERE timestamp < ?", (cutoff,))
         return cur.rowcount
+
+
+# ── Remote commands (shutdown / restart per PC) ──────────────
+
+VALID_COMMANDS = {"shutdown", "restart"}
+
+
+def set_client_command(client_id: str, command: str) -> bool:
+    """Queue a command (shutdown/restart) for a specific client."""
+    if command not in VALID_COMMANDS:
+        return False
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE clients SET pending_command = ? WHERE client_id = ?",
+            (command, client_id),
+        )
+        return cur.rowcount > 0
+
+
+def get_client_command(client_id: str) -> str | None:
+    """Return and clear the pending command for a client."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT pending_command FROM clients WHERE client_id = ?",
+            (client_id,),
+        ).fetchone()
+        if not row or not row["pending_command"]:
+            return None
+        cmd = row["pending_command"]
+        conn.execute(
+            "UPDATE clients SET pending_command = NULL WHERE client_id = ?",
+            (client_id,),
+        )
+        return cmd
+
+
+def clear_client_command(client_id: str) -> bool:
+    with get_db() as conn:
+        cur = conn.execute(
+            "UPDATE clients SET pending_command = NULL WHERE client_id = ?",
+            (client_id,),
+        )
+        return cur.rowcount > 0

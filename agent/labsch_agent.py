@@ -182,6 +182,17 @@ def run_loop(cfg: dict) -> None:
                         current_blocked_apps, current_blocked_websites, current_allowed_websites = apply_config(
                             cfg_resp, client, current_blocked_apps
                         )
+                    # Check for pending remote command
+                    pending = cfg_resp.get("pending_command")
+                    if pending:
+                        print(f"[labsch_agent] received remote command: {pending}", flush=True)
+                        client.log_event("command_received", pending)
+                        if pending == "shutdown":
+                            import subprocess
+                            subprocess.Popen(["shutdown", "/s", "/t", "5", "/c", "LabSCH remote shutdown"])
+                        elif pending == "restart":
+                            import subprocess
+                            subprocess.Popen(["shutdown", "/r", "/t", "5", "/c", "LabSCH remote restart"])
                 # else: server unreachable, will retry next cycle
 
             # Pull config (in case heartbeat didn't return config)
