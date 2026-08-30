@@ -68,8 +68,9 @@ class AgentClient:
         return self._request("POST", "/api/heartbeat", body)
 
     def get_config(self) -> Optional[dict]:
-        """GET /api/config."""
-        return self._request("GET", "/api/config")
+        """GET /api/config for this client, including any per-PC override."""
+        from urllib.parse import quote
+        return self._request("GET", f"/api/config?client_id={quote(self.client_id)}")
 
     def log_event(self, event_type: str, target: str, details: str = None) -> bool:
         """POST /api/event. Best-effort, never raises."""

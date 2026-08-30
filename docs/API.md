@@ -46,10 +46,11 @@ Response (200):
 }
 ```
 
-### `GET /api/config`
+### `GET /api/config?client_id=<id>`
 
-Returns the current live config (same shape as the heartbeat response's
-config block). Agents use this for the 60-second config pull.
+Returns the global config by default. When `client_id` is supplied, an
+existing per-PC override takes precedence. Agents must send their client ID
+on this request.
 
 ### `POST /api/event`
 

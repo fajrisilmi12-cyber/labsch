@@ -85,10 +85,15 @@ labschctl profile activate "Rules Lab"      # apply to all clients
 labschctl profile list
 labschctl profile show "Rules Lab"
 
-# Rename a client (sets display_name)
-labschctl rename <client_id> "PC-LAB-01"
+# Per-PC blocking override
+labschctl client-config set <client_id> \\
+  --blocked-site youtube.com \\
+  --allowed-site google.com \\
+  --blocked-app RobloxPlayerBeta.exe
+labschctl client-config show <client_id>
 
-# View events
+# Remove override; PC inherits global config again
+labschctl client-config clear <client_id>
 labschctl events --hours 1
 ```
 
@@ -136,6 +141,18 @@ The agent applies three layers in this order on every config change:
 If config is empty (all cleared), the agent **deletes** the registry keys
 rather than setting them to empty — this avoids stale policy issues with
 Chromium browsers.
+
+## Per-PC override
+
+To prevent a PC from inheriting global rules, save an explicit empty override:
+
+```bash
+labschctl client-config set <client_id>
+```
+
+This is different from `client-config clear`: `clear` removes the override
+and returns the PC to global inheritance. An empty `set` keeps that PC free
+while the rest of the lab follows global rules.
 
 ## Profile (named ruleset) workflow
 

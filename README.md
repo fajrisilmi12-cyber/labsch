@@ -119,6 +119,16 @@ labschctl client-config show desktop-abc123
 labschctl client-config clear desktop-abc123
 ```
 
+To keep one PC completely free while the global profile remains active, save
+an explicit empty override:
+
+```bash
+labschctl client-config set desktop-abc123
+```
+
+`set` with no lists means "free access for this PC". `clear` means "inherit
+global rules". This distinction is important when Rules Lab is active.
+
 Override behavior:
 
 - **No override** → client receives the global config.

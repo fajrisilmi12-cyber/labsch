@@ -120,8 +120,14 @@ async def heartbeat(req: HeartbeatRequest, _: str = Depends(verify_token)):
 
 
 @app.get("/api/config")
-async def get_agent_config(_: str = Depends(verify_token)):
-    return db.get_config()
+async def get_agent_config(client_id: Optional[str] = None, _: str = Depends(verify_token)):
+    cfg = db.get_config()
+    if client_id:
+        override = db.get_client_override(client_id)
+        if override:
+            cfg = {**cfg, **{k: override[k] for k in
+                             ("blocked_apps", "blocked_websites", "allowed_websites")}}
+    return cfg
 
 
 class EventRequest(BaseModel):
