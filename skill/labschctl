@@ -303,6 +303,67 @@ def cmd_command(args):
         print("  Agent will execute on next heartbeat (≤30s)")
 
 
+def cmd_command_all(args):
+    """Queue shutdown/restart for all online (or all) clients at once."""
+    if args.action == "cancel":
+        print("Cancelling pending commands on ALL clients...")
+        clients = call("GET", "/api/clients") or []
+        ok = 0
+        for c in clients:
+            if (c.get("pending_command") or "").strip():
+                cid = c.get("client_id")
+                result = call("DELETE", f"/api/admin/command/{cid}")
+                if result:
+                    ok += 1
+                    print(f"  OK: cancelled for {c.get('display_name') or cid}")
+        print(f"Done. Cancelled {ok} pending command(s).")
+        return
+
+    if args.action not in ("shutdown", "restart"):
+        print(f"Unknown action: {args.action}", file=sys.stderr)
+        sys.exit(2)
+
+    clients = call("GET", "/api/clients") or []
+    if not clients:
+        print("No clients found.")
+        return
+
+    targets = []
+    for c in clients:
+        if args.online_only and c.get("status") != "online":
+            continue
+        targets.append(c)
+
+    if not targets:
+        print("No matching clients (online_only filter excluded everything).")
+        return
+
+    if not args.yes:
+        print(f"About to queue '{args.action}' for {len(targets)} client(s):")
+        for c in targets:
+            label = c.get("display_name") or c.get("client_id")
+            mark = " [test PC]" if c.get("is_test") else ""
+            print(f"  - {label} ({c.get('client_id')}){mark}")
+        if args.action == "shutdown":
+            print("WARNING: this will turn off the PCs. Pass --yes to skip prompt.")
+        confirm = input("Proceed? [y/N] ").strip().lower()
+        if confirm != "y":
+            print("Aborted.")
+            return
+
+    ok, fail = 0, 0
+    for c in targets:
+        cid = c.get("client_id")
+        result = call("POST", f"/api/admin/command/{cid}?command={args.action}")
+        if result:
+            ok += 1
+            print(f"  OK: {args.action} queued for {c.get('display_name') or cid}")
+        else:
+            fail += 1
+            print(f"  FAIL: {cid}")
+    print(f"Done. Queued: {ok}, Failed: {fail}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="labschctl — control labsch-manager server")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -354,8 +415,16 @@ def main():
 
     p_command = sub.add_parser("command", help="remote shutdown/restart a PC")
     p_command.add_argument("action", choices=["shutdown", "restart", "cancel"])
-    p_command.add_argument("client_id", help="target client ID")
+    p_command.add_argument("client_id", help="target client ID (or display name / hostname)")
     p_command.set_defaults(func=cmd_command)
+
+    p_command_all = sub.add_parser("command-all", help="queue shutdown/restart to MANY PCs at once")
+    p_command_all.add_argument("action", choices=["shutdown", "restart", "cancel"])
+    p_command_all.add_argument("--online-only", action="store_true",
+                               help="only target clients currently online")
+    p_command_all.add_argument("--yes", action="store_true",
+                               help="skip confirmation prompt")
+    p_command_all.set_defaults(func=cmd_command_all)
 
     args = parser.parse_args()
     args.func(args)
