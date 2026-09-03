@@ -53,3 +53,7 @@ Thumbs.db
 # Test artifacts
 .coverage
 htmlcov/
+node_modules/
+.wrangler/
+*.zip
+
