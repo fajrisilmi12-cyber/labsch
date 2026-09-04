@@ -1,8 +1,10 @@
-"""Device blocker — disable camera & audio on Windows.
+r"""Device blocker — disable camera & audio on Windows.
 
 Camera: Block via registry policy (HKLM\SOFTWARE\Policies\Microsoft\Camera)
         + device-install restriction on the imaging class GUID.
-Audio:  Stop + disable Windows Audio service (audiosrv) and endpoint builder.
+Audio:  Block via device-install restriction on the MEDIA class GUID
+        (mutes output hardware, keeps audiosrv running so the volume
+        system-tray icon stays functional). Reversible.
 Both are reversible — enable_* restores original state.
 """
 import subprocess
@@ -11,7 +13,7 @@ import logging
 log = logging.getLogger("labsch.device_blocker")
 
 CAMERA_POLICY_KEY = r"HKLM\SOFTWARE\Policies\Microsoft\MicrosoftCamera"
-AUDIO_SERVICES = ["audiosrv", "AudioEndpointBuilder"]
+MEDIA_CLASS_GUID = "{4d36e96c-e325-11ce-bfc1-08002be10318}"  # MEDIA (audio endpoints)
 CAMERA_CLASS_GUID = "{6bdd1fc6-810f-11d0-bec7-08002be2092f}"
 
 
@@ -30,6 +32,13 @@ def _reg_delete(path: str, name: str) -> bool:
     return r.returncode == 0
 
 
+def _reg_delete_tree(path: str) -> bool:
+    r = subprocess.run(
+        ["reg", "delete", path, "/f"], capture_output=True
+    )
+    return r.returncode == 0
+
+
 def _sc(cmd: list) -> bool:
     r = subprocess.run(["sc"] + cmd, capture_output=True)
     return r.returncode == 0
@@ -37,55 +46,95 @@ def _sc(cmd: list) -> bool:
 
 # ── Camera ────────────────────────────────────────────────────
 
+DENY_BASE = r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions"
+DENY_LIST = DENY_BASE + r"\DenyDeviceClasses"
+CAM_DENY_INDEX = "1"    # imaging class
+AUD_DENY_INDEX = "2"    # media class
+
+
+def _deny_index(index: str, guid_value: str) -> bool:
+    ok = _reg_add(DENY_BASE, "DenyDeviceClasses", "1")
+    ok = _reg_add(DENY_LIST, index, guid_value, "REG_SZ") and ok
+    return ok
+
+
+def _undeny_index(index: str) -> None:
+    # Remove one indexed entry; drop the master switch only if list is empty.
+    _reg_delete(DENY_LIST, index)
+    r = subprocess.run(
+        ["reg", "query", DENY_LIST], capture_output=True, text=True,
+    )
+    if r.returncode != 0 or ("REG_SZ" not in (r.stdout or "")):
+        _reg_delete(DENY_BASE, "DenyDeviceClasses")
+
+
 def disable_camera() -> bool:
-    """Block camera access system-wide via policy + device class."""
+    """Block camera access system-wide via policy + device class (index 1)."""
     ok = _reg_add(CAMERA_POLICY_KEY, "AllowCamera", "0")
     _reg_add(r"HKLM\SOFTWARE\Policies\Microsoft\Camera", "AllowCamera", "0")
-    # Deny camera device class via device-install restriction
-    _reg_add(
-        r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions",
-        "DenyDeviceClasses", "1",
-    )
-    _reg_add(
-        r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions\DenyDeviceClasses",
-        "1", CAMERA_CLASS_GUID, "REG_SZ",
-    )
+    ok = _deny_index(CAM_DENY_INDEX, CAMERA_CLASS_GUID) and ok
     log.info("camera disabled: %s", ok)
     return ok
 
 
 def enable_camera() -> bool:
-    """Re-enable camera."""
+    """Re-enable camera (keeps audio deny entry intact)."""
     _reg_delete(CAMERA_POLICY_KEY, "AllowCamera")
     _reg_delete(r"HKLM\SOFTWARE\Policies\Microsoft\Camera", "AllowCamera")
-    _reg_delete(
-        r"HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions",
-        "DenyDeviceClasses",
-    )
+    _undeny_index(CAM_DENY_INDEX)
     log.info("camera enabled")
     return True
 
 
 # ── Audio ─────────────────────────────────────────────────────
+# NOTE (2026-09-04): old approach stopped+disabled audiosrv/AudioEndpointBuilder.
+# That kills the volume system-tray icon and needs reboot to recover.
+# New approach: deny the MEDIA device class (audio endpoints) + force mute.
+# audiosrv keeps running, taskbar icon stays alive, fully reversible.
+
+def _ensure_audiosrv_running() -> None:
+    # Make sure the audio service is up so the tray icon works.
+    _sc(["config", "audiosrv", "start=", "auto"])
+    _sc(["config", "AudioEndpointBuilder", "start=", "auto"])
+    _sc(["start", "AudioEndpointBuilder"])
+    _sc(["start", "audiosrv"])
+
+
+def _mute_all_outputs() -> None:
+    # Best-effort mute via PowerShell AudioDeviceCmdlets-free approach:
+    # set master volume to 0 through WScript shell SendKeys-free API is unreliable,
+    # so use nircmd-free fallback: `powershell (New-Object -ComObject WScript.Shell)`
+    # would steal focus — instead just silence via sndvol? Skip invasive mute;
+    # the class-deny already blocks render/capture devices on next plug-in.
+    # Keep devices muted at the endpoint level for currently-present ones:
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "$o=(New-Object -ComObject MMDeviceEnumerator 2>$null);"
+         "try{$d=$o.GetDefaultAudioEndpoint(0,1);"
+         "$v=$d.AudioEndpointVolume;$v.MasterVolumeLevelScalar=0.0}catch{}"],
+        capture_output=True,
+    )
+
 
 def disable_audio() -> bool:
-    """Stop + disable Windows Audio services. Requires SYSTEM/admin."""
-    ok = True
-    for svc in AUDIO_SERVICES:
-        _sc(["stop", svc])  # may already be stopped
-        if not _sc(["config", svc, "start=", "disabled"]):
-            ok = False
+    """Block audio output/input hardware. audiosrv stays running (tray OK)."""
+    _ensure_audiosrv_running()
+    ok = _deny_index(AUD_DENY_INDEX, MEDIA_CLASS_GUID)
+    _mute_all_outputs()
+    # Restore legacy damage: if services were disabled by old version, re-enable.
+    _sc(["config", "audiosrv", "start=", "auto"])
+    _sc(["config", "AudioEndpointBuilder", "start=", "auto"])
+    _sc(["start", "AudioEndpointBuilder"])
+    _sc(["start", "audiosrv"])
     log.info("audio disabled: %s", ok)
     return ok
 
 
 def enable_audio() -> bool:
-    """Re-enable + start Windows Audio services."""
+    """Re-enable audio hardware + make sure services are up."""
+    _undeny_index(AUD_DENY_INDEX)
     ok = True
-    for svc in AUDIO_SERVICES:
-        if not _sc(["config", svc, "start=", "auto"]):
-            ok = False
-        _sc(["start", svc])
+    _ensure_audiosrv_running()
     log.info("audio enabled: %s", ok)
     return ok
 

@@ -96,6 +96,21 @@ reg delete "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /f >nul 2>&1 && echo       TaskMgr (HKLM) : ENABLED
 
 :: ----------------------------------------------------------------
+:: [6b/7] Restore camera + audio + audio services (fix tray icon)
+:: ----------------------------------------------------------------
+echo [6b/7] Mengembalikan camera + audio + icon volume...
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\MicrosoftCamera" /v "AllowCamera" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Camera" /v "AllowCamera" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions\DenyDeviceClasses" /v "1" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions\DenyDeviceClasses" /v "2" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Policies\Microsoft\Windows\DeviceInstall\Restrictions" /v "DenyDeviceClasses" /f >nul 2>&1
+sc config audiosrv start= auto >nul 2>&1
+sc config AudioEndpointBuilder start= auto >nul 2>&1
+sc start AudioEndpointBuilder >nul 2>&1
+sc start audiosrv >nul 2>&1
+echo       Camera/Audio   : RESTORED ^(tray OK^)
+
+:: ----------------------------------------------------------------
 :: [7/7] Hapus config + folder agent data
 :: ----------------------------------------------------------------
 echo [7/7] Menghapus config + folder data...
@@ -111,6 +126,7 @@ echo.
 echo Yang sudah dicabut:
 echo   - Semua blokir situs (hosts + browser policy)
 echo   - Semua blokir aplikasi (IFEO)
+echo   - Camera + audio direstore (icon volume OK)
 echo   - Task Manager re-enabled
 echo   - Semua auto-start (4 lapis)
 echo   - Scheduled tasks + Run key
