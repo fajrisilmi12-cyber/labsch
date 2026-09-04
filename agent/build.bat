@@ -10,8 +10,8 @@ echo === LabSCHAgent Windows Build (with embedded config) ===
 echo.
 
 REM Parse args
-set "SERVER_URL=https://enhanced-tmp-chances-completion.trycloudflare.com"
-set "API_TOKEN="
+set "SERVER_URL=https://labsch-api.<your-subdomain>.workers.dev"
+set "API_TOKEN=<your-uuid-token>"
 set "CLIENT_ID="
 
 :parse_args
@@ -23,7 +23,7 @@ if /i "%~1"=="--server" (
     goto :parse_args
 )
 if /i "%~1"=="--token" (
-    set "API_TOKEN=%~2"
+    set "API_TOKEN=<your-uuid-token>"
     shift
     shift
     goto :parse_args

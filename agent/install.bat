@@ -31,8 +31,8 @@ pushd "%~dp0" >nul 2>&1
 :: ----------------------------------------------------------------
 :: 1. Konfigurasi (ganti kalau perlu, default sudah benar)
 :: ----------------------------------------------------------------
-set "SERVER_URL=https://enhanced-tmp-chances-completion.trycloudflare.com"
-set "API_TOKEN=UR5BMxbHVbC-w-jAN_qfCo5ahaJe_6NDhlfWITYi-0M"
+set "SERVER_URL=https://labsch-api.<your-subdomain>.workers.dev"
+set "API_TOKEN=<your-uuid-token>"
 
 echo.
 echo ================================================================
@@ -108,7 +108,7 @@ if not exist "C:\ProgramData\LabSCHAgent" mkdir "C:\ProgramData\LabSCHAgent"
     echo   "client_id": "",
     echo   "display_name": "%DISPLAY_NAME%",
     echo   "is_test": %IS_TEST_FLAG%,
-    echo   "version": "0.1.0"
+    echo   "version": "0.2.2"
     echo }
 ) > "C:\ProgramData\LabSCHAgent\config.ini"
 echo       OK
@@ -116,14 +116,29 @@ echo       OK
 :: ----------------------------------------------------------------
 :: 5. Install self-protection
 :: ----------------------------------------------------------------
-echo [3/5] Installing self-protection (scheduled task + Run key)...
+echo [3/5] Installing self-protection (scheduled task + Run key + OnBoot)...
 schtasks /delete /tn "LabSCHAgentWatchdog" /f >nul 2>&1
+schtasks /delete /tn "LabSCHAgentOnBoot" /f >nul 2>&1
+
+:: Scheduled task — restart tiap 5 menit kalau agent crash
 schtasks /create /tn "LabSCHAgentWatchdog" /tr "python \"%~dp0labsch_agent.py\"" /sc minute /mo 5 /ru SYSTEM /rl HIGHEST /f >nul 2>&1
 if errorlevel 1 (
     echo       WARNING: scheduled task gagal (mungkin nama task sudah ada)
 ) else (
     echo       scheduled task OK (restart tiap 5 menit)
 )
+
+:: OnBoot task — jalan SETIAP BOOT, tanpa perlu user login
+:: Trigger: At startup. Action: python labsch_agent.py --once
+:: Lalu watchdog akan teruskan via scheduled task
+schtasks /create /tn "LabSCHAgentOnBoot" /tr "python \"%~dp0labsch_agent.py\" --once" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul 2>&1
+if errorlevel 1 (
+    echo       WARNING: OnBoot task gagal
+) else (
+    echo       OnBoot task OK (auto-start saat boot)
+)
+
+:: Run key — backup untuk user-session
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "LabSCHAgent" /t REG_SZ /d "python \"%~dp0labsch_agent.py\"" /f >nul 2>&1
 if errorlevel 1 (
     echo       WARNING: Run key gagal

@@ -24,9 +24,10 @@ import ifeo_blocker
 import browser_policy
 import self_protect
 import device_id
+import device_blocker
 
 # Config
-DEFAULT_HEARTBEAT_INTERVAL = 30  # seconds
+DEFAULT_HEARTBEAT_INTERVAL = 30  # seconds (overridable via config.ini: heartbeat_interval)
 DEFAULT_CONFIG_PULL_INTERVAL = 60
 DEFAULT_APP_KILL_INTERVAL = 5
 
@@ -167,12 +168,13 @@ def run_loop(cfg: dict) -> None:
     current_blocked_apps: list = []
     current_blocked_websites: list = []
     current_allowed_websites: list = []
+    current_device_flags: dict = {}  # {"disable_camera": bool, "disable_audio": bool}
 
     while True:
         now = time.time()
         try:
             # Heartbeat
-            if now - last_heartbeat >= DEFAULT_HEARTBEAT_INTERVAL:
+            if now - last_heartbeat >= int(cfg.get("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL)):
                 cfg_resp = client.heartbeat(hostname, ip, user, version, dev_id, mac,
                                             display_name=display_name, is_test=is_test)
                 if cfg_resp is not None:
@@ -182,6 +184,12 @@ def run_loop(cfg: dict) -> None:
                         current_blocked_apps, current_blocked_websites, current_allowed_websites = apply_config(
                             cfg_resp, client, current_blocked_apps
                         )
+                    # Device flags (camera/audio) — apply on change
+                    current_device_flags = device_blocker.apply_device_flags(
+                        bool(cfg_resp.get("disable_camera", False)),
+                        bool(cfg_resp.get("disable_audio", False)),
+                        current_device_flags,
+                    )
                     # Check for pending remote command
                     pending = cfg_resp.get("pending_command")
                     if pending:
@@ -193,6 +201,46 @@ def run_loop(cfg: dict) -> None:
                         elif pending == "restart":
                             import subprocess
                             subprocess.Popen(["shutdown", "/r", "/t", "5", "/c", "LabSCH remote restart"])
+                        elif pending == "lock":
+                            import subprocess
+                            subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
+                        elif pending == "notify":
+                            import subprocess
+                            message = cfg_resp.get("pending_command_message") or "Message from admin"
+                            # Popup must appear on the ACTIVE USER session, not session 0
+                            # (service context). Use msg.exe (Terminal Services message)
+                            # which targets the console session directly. Fallback:
+                            # scheduled task one-shot running in user context.
+                            safe_msg = message.replace('"', "'").replace("`", "'")
+                            launched = False
+                            # Preferred: msg.exe → shows native message box in user session
+                            try:
+                                r = subprocess.run(
+                                    ["msg.exe", "console", safe_msg],
+                                    capture_output=True, timeout=10,
+                                )
+                                launched = (r.returncode == 0)
+                            except Exception:
+                                launched = False
+                            if not launched:
+                                # Fallback: one-shot scheduled task in active session
+                                try:
+                                    subprocess.run(
+                                        ["schtasks", "/Create", "/F", "/SC", "ONCE",
+                                         "/ST", "23:59", "/TN", "LabSCHNotify",
+                                         "/TR",
+                                         "powershell -NoProfile -WindowStyle Hidden "
+                                         "-Command \"Add-Type -AssemblyName "
+                                         "System.Windows.Forms; "
+                                         "[System.Windows.Forms.MessageBox]::Show('"
+                                         + safe_msg + "', 'LabSCH Notify')\""],
+                                        capture_output=True, timeout=10)
+                                    subprocess.run(["schtasks", "/Run", "/TN", "LabSCHNotify"],
+                                                   capture_output=True, timeout=10)
+                                except Exception:
+                                    pass
+                        # clear the pending command regardless of type
+                        client.clear_pending_command()
                 # else: server unreachable, will retry next cycle
 
             # Pull config (in case heartbeat didn't return config)

@@ -72,6 +72,12 @@ class AgentClient:
         from urllib.parse import quote
         return self._request("GET", f"/api/config?client_id={quote(self.client_id)}")
 
+    def clear_pending_command(self) -> bool:
+        """DELETE /api/admin/command/{client_id}. Best-effort, never raises."""
+        from urllib.parse import quote
+        result = self._request("DELETE", f"/api/admin/command/{quote(self.client_id)}")
+        return result is not None and result.get("ok", False)
+
     def log_event(self, event_type: str, target: str, details: str = None) -> bool:
         """POST /api/event. Best-effort, never raises."""
         body = {
