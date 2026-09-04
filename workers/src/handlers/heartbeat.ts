@@ -59,7 +59,7 @@ export async function heartbeat(c: Context<{ Bindings: Env }>) {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'online', ?, ?)`
     ).bind(
       existingClientId, req.device_id ?? null, req.mac ?? null,
-      req.hostname, req.ip, req.user, req.version ?? '0.1.0',
+      req.hostname, req.ip ?? null, req.user ?? null, req.version ?? '0.1.0',
       now, now, req.display_name ?? '', req.is_test ? 1 : 0,
     ).run();
   }

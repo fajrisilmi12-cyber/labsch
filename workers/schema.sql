@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS config (
     allowed_websites TEXT NOT NULL DEFAULT '[]',
     config_version INTEGER NOT NULL DEFAULT 0,
     updated_at REAL,
-    updated_by TEXT
+    updated_by TEXT,
+    disable_camera INTEGER NOT NULL DEFAULT 0,
+    disable_audio INTEGER NOT NULL DEFAULT 0
 );
 
 INSERT OR IGNORE INTO config (id, blocked_apps, blocked_websites, allowed_websites, config_version)
@@ -52,7 +54,9 @@ CREATE TABLE IF NOT EXISTS profiles (
     allowed_websites TEXT NOT NULL DEFAULT '[]',
     blocked_apps TEXT NOT NULL DEFAULT '[]',
     created_at REAL NOT NULL,
-    activated_at REAL
+    activated_at REAL,
+    disable_camera INTEGER NOT NULL DEFAULT 0,
+    disable_audio INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS client_overrides (
