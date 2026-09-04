@@ -9,6 +9,8 @@
 Centralized Windows lab management for 20+ PCs — **100% serverless**. Push block/allow rules, app-block policies, and camera/audio controls to lightweight Python agents on each client. The agent runs as a Windows service, can't be killed by students, and identifies each PC by its MAC address (so reinstalls never create duplicate records).
 
 > **Live deployment**: Managing SMK + SMP lab PCs in Medan, Indonesia. Server runs on **Cloudflare Workers + D1** (free tier, $0/month) — no homeserver required, no tunnel to maintain, no VM to babysit.
+>
+> **This is a self-hosted project.** Deploy your own Workers URL (see [Server setup](#server-setup-cloudflare-workers)) — the URLs in this README are examples from the author's own deployment. **Never ship someone else's Workers URL with your token.**
 
 ## Features
 
@@ -64,11 +66,11 @@ The agent is **pull-based**: each client polls the server. No firewall ports to 
 
 ## Quick start (admin)
 
-The server is already deployed at `https://labsch-api.fajrisilmi6.workers.dev` (or your own Workers URL — see [Server setup](#server-setup-cloudflare-workers) below).
+First, deploy your own server (see [Server setup](#server-setup-cloudflare-workers) below), then point the CLI at it:
 
 ```bash
 # Set environment (or in ~/.hermes/.env):
-export SCHOOL_SERVER_URL="https://labsch-api.fajrisilmi6.workers.dev"
+export SCHOOL_SERVER_URL="https://labsch-api.<your-subdomain>.workers.dev"
 export SCHOOL_API_TOKEN="<uuid>"
 
 # List all clients
@@ -259,13 +261,34 @@ wrangler deploy
 
 Set the URL as `SCHOOL_SERVER_URL` for `labschctl`, and bake it into the agent's `install.bat` before distribution. Cron trigger (mark-stale every 5 min) is already in `wrangler.toml`.
 
+## ⚠️ Configure your own URL (REQUIRED before deploying agents)
+
+After deploying your own Worker, you must replace the server URL in **every place the agents and CLI read it**. There is no central config — each location is baked at install/build time:
+
+| # | File | What to change |
+|---|---|---|
+| 1 | **`agent/install.bat`** (line ~34) | `set "SERVER_URL=https://labsch-api.<your-subdomain>.workers.dev"` |
+| 2 | **`agent/build.bat`** args | `build.bat --server https://labsch-api.<your-subdomain>.workers.dev --token <UUID>` |
+| 3 | **`skill/labschctl`** (or `~/.hermes/.env`) | `SCHOOL_SERVER_URL` env var |
+| 4 | **Existing PCs** | Edit `C:\ProgramData\LabSCHAgent\config.ini` → `"server_url"` key, then restart the agent |
+
+Also replace `API_TOKEN` in `install.bat` with **your own** generated UUID:
+
+```bash
+python3 -c "import uuid; print(uuid.uuid4())"
+```
+
+> **Security note**: the API token grants full control of every registered PC (including remote shutdown). Never commit your real token to a public repo, and never point your agents at a Workers URL you don't control — the operator of that URL could shut down your lab.
+>
+> **Already-installed PCs without a reinstall?** Fastest path: edit `config.ini` on each PC (option 4 above). The MAC-based client ID means no re-registration is needed — the same PC keeps its record.
+
 ## Build (Windows .exe)
 
 To distribute as a single `.exe` instead of Python scripts:
 
 ```cmd
 cd agent
-build.bat --server https://labsch-api.fajrisilmi6.workers.dev --token <UUID>
+build.bat --server https://labsch-api.<your-subdomain>.workers.dev --token <UUID>
 ```
 
 Output: `dist\LabSCHAgent.exe` (~15 MB, self-contained).
