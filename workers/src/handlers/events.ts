@@ -7,11 +7,16 @@ import {
 
 // Whitelist of valid event types. Anything else is rejected to prevent
 // arbitrary event_type values from filling up the events table.
+// v0.3.6: expanded whitelist to include v0.2.x agent event types
+// for backward compat. Old agents send: command_received, notify_rejected,
+// ifeo_applied, ifeo_cleared, config_apply_failed
 const VALID_EVENT_TYPES = new Set([
   'config_applied', 'blocked_app', 'blocked_website', 'allowed_website',
-  'command_executed', 'command_failed', 'agent_started', 'agent_stopped',
+  'command_executed', 'command_failed', 'command_received',
+  'agent_started', 'agent_stopped',
   'self_protect_breach', 'device_id_rewrite', 'auth_failed',
   'override_set', 'override_cleared',
+  'notify_rejected', 'ifeo_applied', 'ifeo_cleared', 'config_apply_failed',
 ]);
 
 function safeParseInt(s: string | null | undefined, defaultVal: number, min: number, max: number): number {
@@ -44,11 +49,16 @@ export const postEvent = withErrorHandler(async (c: Context<{ Bindings: Env }>) 
     throw new ValidationError('target must be printable ASCII <=512 chars');
   }
   if (req.details !== undefined) {
+    // v0.3.6: coerce non-string details for backward compat with old agents
     if (typeof req.details !== 'string') {
-      throw new ValidationError('details must be a string');
+      try {
+        req.details = JSON.stringify(req.details);
+      } catch {
+        req.details = String(req.details);
+      }
     }
     if (req.details.length > 4096) {
-      throw new ValidationError('details exceeds 4096 chars');
+      req.details = req.details.slice(0, 4096);
     }
   }
   const res = await c.env.DB.prepare(

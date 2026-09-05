@@ -1,33 +1,17 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title LabSCHAgent 1-Click Installer
+title LabSCHAgent Installer
 
 :: ================================================================
-:: LabSCHAgent 1-Click Installer
-::
-:: Satu file ini ngejalanin semuanya:
-:: 1. Auto-elevate ke Administrator
-:: 2. Setup config (server URL + token)
-:: 3. Install self-protection (scheduled task + Run key)
-:: 4. Lockdown (disable Task Manager)
-:: 5. Start agent immediately
-::
-:: Tinggal double-click file ini. Tidak perlu command line.
+:: LabSCHAgent Installer
 :: ================================================================
 
 :: ----------------------------------------------------------------
 :: 0. Auto-elevate ke Administrator
-:: v0.3.6.2: REMOVED auto-elevation entirely. Previous attempts
-::   (mshta trick, nested cmd/call, simple Start-Process) all caused
-::   either silent exit or infinite UAC loops on some Windows
-::   configs. The user reported "window banyak banget" which means
-::   the elevation was recursing.
-::   WORKAROUND: just print a clear warning if not admin, and tell
-::   user to Run as Administrator. Reliable, no recursion possible.
 :: ----------------------------------------------------------------
 echo.
 echo ================================================================
-echo LabSCHAgent 1-Click Installer
+echo LabSCHAgent Installer
 echo ================================================================
 echo.
 echo [0/5] Mengecek hak Administrator...
@@ -46,9 +30,6 @@ if errorlevel 1 (
     echo.
     echo JANGAN double-click biasa! Harus klik kanan - Run as admin.
     echo.
-    echo Window ini akan tutup dalam 30 detik. Tekan tombol apa saja
-    echo untuk tutup sekarang, atau tutup manual dengan klik X.
-    echo.
     timeout /t 30 /nobreak >nul 2>&1
     exit /b 1
 )
@@ -58,74 +39,43 @@ echo.
 pushd "%~dp0" >nul 2>&1
 
 :: ----------------------------------------------------------------
-:: 1. Konfigurasi (ganti kalau perlu, default sudah benar)
-:: v0.3.5: refuse to install with placeholder values. Previously the
-::   script would happily write <your-uuid-token> into config.ini if
-::   the operator forgot to edit it, then the agent would 401 forever.
+:: 1. Konfigurasi
 :: ----------------------------------------------------------------
 set "SERVER_URL=https://labsch-api.<your-subdomain>.workers.dev"
 set "API_TOKEN=<your-uuid-token>"
 
 if "%API_TOKEN%"=="<your-uuid-token>" (
-    echo.
-    echo ERROR: API_TOKEN masih placeholder. Edit install.bat dan ganti
-    echo        dengan token asli sebelum menjalankan installer.
-    echo.
+    echo ERROR: API_TOKEN masih placeholder.
     pause
     exit /b 2
 )
 if "%SERVER_URL%"=="https://labsch-api.<your-subdomain>.workers.dev" (
-    echo.
-    echo ERROR: SERVER_URL masih placeholder. Edit install.bat dan ganti
-    echo        dengan URL server asli (e.g. https://labsch-api.example.com)
-    echo.
+    echo ERROR: SERVER_URL masih placeholder.
     pause
     exit /b 2
 )
 
-echo.
-echo ================================================================
-echo LabSCHAgent 1-Click Installer
-echo ================================================================
-echo.
 echo Server: %SERVER_URL%
 echo Token:  %API_TOKEN:~0,8%...
 echo.
 
 :: ----------------------------------------------------------------
-:: 1b. Tanya display_name (untuk identifikasi di server)
+:: 1b. Tanya display_name
 :: ----------------------------------------------------------------
-echo ================================================================
 echo PENAMAAN KOMPUTER
-echo ================================================================
 echo.
-echo Masukkan nama untuk PC ini. Contoh:
-echo   - PC-LAB-01 (PC laboratorium nomor 1)
-echo   - PC-GURU-FAJRI (PC guru)
-echo   - PC-TEST-MSI (PC testing, akan dikecualikan dari profile)
-echo.
-echo Kosongkan untuk pakai nama otomatis (PC-NAMAPC dari hostname Windows).
+echo Masukkan nama untuk PC ini (contoh: PC-LAB-01).
+echo Kosongkan untuk pakai nama otomatis.
 echo.
 set "DISPLAY_NAME="
 set /p "DISPLAY_NAME=Nama PC: "
 if "%DISPLAY_NAME%"=="" set "DISPLAY_NAME=PC-%COMPUTERNAME%"
-
-:: v0.3.5: validate display_name against server-side regex. Reject
-:: any char outside [A-Za-z0-9 ._-] before writing to config.ini.
-:: The server regex is /^[A-Za-z0-9 ._-]{1,64}$/.
-echo %DISPLAY_NAME% | findstr /R /B /E /C:"[A-Za-z0-9]" >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: DISPLAY_NAME contains invalid characters. Use A-Z, a-z, 0-9, space, dot, underscore, hyphen.
-    echo        got: %DISPLAY_NAME%
-    pause
-    exit /b 2
-)
 echo Nama PC: %DISPLAY_NAME%
 echo.
 
-:: Tanya apakah PC ini untuk testing (dikecualikan dari profile rules)
+:: Test PC?
 set "IS_TEST="
-set /p "IS_TEST=PC testing/development? (PC ini dikecualikan dari rules lab) [y/N]: "
+set /p "IS_TEST=PC testing/development? [y/N]: "
 if /i "%IS_TEST%"=="y" (
     set "IS_TEST_FLAG=true"
 ) else (
@@ -139,9 +89,7 @@ echo.
 :: ----------------------------------------------------------------
 where python >nul 2>&1
 if errorlevel 1 (
-    echo Python tidak ditemukan. Install Python 3.10+ dulu dari python.org
-    echo Download: https://www.python.org/downloads/
-    echo JANGAN LUPA centang "Add Python to PATH" saat install.
+    echo Python tidak ditemukan. Install Python 3.10+ dulu.
     pause
     exit /b 1
 )
@@ -158,10 +106,6 @@ echo       OK
 
 :: ----------------------------------------------------------------
 :: 4. Setup config
-:: v0.3.5: write to a temp file then atomically rename. Previously
-:: the script wrote directly; if the disk filled or the user pulled
-:: the USB mid-write, config.ini was left empty/partial and the
-:: agent couldn't auth on next boot.
 :: ----------------------------------------------------------------
 echo [2/5] Writing config...
 if not exist "C:\ProgramData\LabSCHAgent" mkdir "C:\ProgramData\LabSCHAgent"
@@ -172,109 +116,61 @@ if not exist "C:\ProgramData\LabSCHAgent" mkdir "C:\ProgramData\LabSCHAgent"
     echo   "client_id": "",
     echo   "display_name": "%DISPLAY_NAME%",
     echo   "is_test": %IS_TEST_FLAG%,
-    echo   "version": "0.3.5"
-    echo }
+    echo   "version": "0.3.6.5"
+    }
 ) > "C:\ProgramData\LabSCHAgent\config.ini.tmp"
 move /y "C:\ProgramData\LabSCHAgent\config.ini.tmp" "C:\ProgramData\LabSCHAgent\config.ini" >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: gagal menulis config.ini
-    pause
-    exit /b 2
-)
 echo       OK
 
 :: ----------------------------------------------------------------
 :: 5. Install self-protection
 :: ----------------------------------------------------------------
-echo [3/5] Installing self-protection (scheduled task + Run key + OnBoot)...
+echo [3/5] Installing self-protection...
 schtasks /delete /tn "LabSCHAgentWatchdog" /f >nul 2>&1
 schtasks /delete /tn "LabSCHAgentOnBoot" /f >nul 2>&1
 
-:: Scheduled task -- restart tiap 5 menit kalau agent crash
 schtasks /create /tn "LabSCHAgentWatchdog" /tr "python \"%~dp0labsch_agent.py\"" /sc minute /mo 5 /ru SYSTEM /rl HIGHEST /f >nul 2>&1
-if errorlevel 1 (
-    echo       WARNING: scheduled task gagal (mungkin nama task sudah ada)
-) else (
-    echo       scheduled task OK (restart tiap 5 menit)
-)
-
-:: OnBoot task -- jalan SETIAP BOOT, tanpa perlu user login
-:: Trigger: At startup. Action: python labsch_agent.py --once
-:: Lalu watchdog akan teruskan via scheduled task
 schtasks /create /tn "LabSCHAgentOnBoot" /tr "python \"%~dp0labsch_agent.py\" --once" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul 2>&1
-if errorlevel 1 (
-    echo       WARNING: OnBoot task gagal
-) else (
-    echo       OnBoot task OK (auto-start saat boot)
-)
-
-:: Run key -- backup untuk user-session
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "LabSCHAgent" /t REG_SZ /d "python \"%~dp0labsch_agent.py\"" /f >nul 2>&1
-if errorlevel 1 (
-    echo       WARNING: Run key gagal
-) else (
-    echo       Run key OK (auto-start saat boot)
-)
+echo       OK
 
 :: ----------------------------------------------------------------
 :: 6. Lockdown (disable Task Manager)
 :: ----------------------------------------------------------------
 echo [4/5] Disabling Task Manager...
+reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /t REG_DWORD /d "1" /f >nul 2>&1
 reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /t REG_DWORD /d "1" /f >nul 2>&1
-echo       OK
+taskkill /f /im taskmgr.exe >nul 2>&1
+echo       OK (jika belum aktif, coba logoff/login)
 
 :: ----------------------------------------------------------------
-:: 7. Test heartbeat (1x)
+:: 7. Test heartbeat
 :: ----------------------------------------------------------------
-echo [5/5] Testing connection to server...
+echo [5/5] Testing connection...
 python labsch_agent.py --once
 if errorlevel 1 (
-    echo.
-    echo PERINGATAN: Gagal connect ke server. Cek internet / token.
-    echo Agent tetap terinstall, coba jalanin manual nanti.
+    echo PERINGATAN: Gagal connect ke server.
 ) else (
-    echo.
-    echo KONEKSI BERHASIL. Agent sudah terdaftar.
+    echo KONEKSI BERHASIL.
 )
 
-:: ----------------------------------------------------------------
-:: 8. Selesai
-:: ----------------------------------------------------------------
 echo.
 echo ================================================================
 echo INSTALASI SELESAI
 echo ================================================================
-echo.
-echo Yang sudah terpasang:
-echo   - Nama PC: %DISPLAY_NAME%
-echo   - Test PC: %IS_TEST_FLAG%
-echo   - Config di C:\ProgramData\LabSCHAgent\
-echo   - Scheduled Task "LabSCHAgentWatchdog" (auto-respawn)
-echo   - Run key "LabSCHAgent" (auto-start saat boot)
-echo   - Task Manager disabled
-echo   - Agent terdaftar di server
-echo.
-echo Agent akan jalan otomatis:
-echo   - Setiap 5 menit (kalau dimatikan)
-echo   - Setiap kali PC di-restart
-echo.
-echo Untuk UNINSTALL (misal pindah PC), jalankan: uninstall.bat
+echo Nama PC: %DISPLAY_NAME%
 echo.
 
 :: Tanya langsung start agent
-choice /C YN /N /M "Start agent sekarang (foreground)? [Y/N]: "
-if errorlevel 2 goto :NoStart
+set "START_NOW="
+set /p "START_NOW=Start agent sekarang? [Y/n]: "
+if /i not "%START_NOW%"=="n" (
+    echo Starting agent...
+    python labsch_agent.py
+)
 
 echo.
-echo Starting agent... (tekan Ctrl+C untuk keluar)
-echo.
-python labsch_agent.py
-
-:NoStart
-echo.
-echo Agent akan jalan otomatis tiap 5 menit / boot.
-echo Untuk start manual: python labsch_agent.py
-echo.
-pause
+echo Tekan tombol apa saja untuk keluar...
+pause >nul
 popd >nul 2>&1
 exit /b 0

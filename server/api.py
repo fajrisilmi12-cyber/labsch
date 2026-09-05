@@ -310,13 +310,21 @@ class EventRequest(BaseModel):
             raise ValueError("target must be printable ASCII <=512 chars")
         return v
 
-    @field_validator("details")
+    @field_validator("details", mode="before")
     @classmethod
-    def _details_ok(cls, v: Optional[str]) -> Optional[str]:
+    def _details_ok(cls, v):
         if v is None:
-            return v
-        if not isinstance(v, str) or len(v) > 4096:
-            raise ValueError("details must be a string <=4096 chars")
+            return None
+        # v0.3.6: coerce non-string details to string for backward compat
+        # with older agents (v0.2.x) that send details as int/dict/bool
+        if not isinstance(v, str):
+            try:
+                import json
+                v = json.dumps(v, ensure_ascii=False)
+            except Exception:
+                v = str(v)
+        if len(v) > 4096:
+            v = v[:4096]
         return v
 
 
