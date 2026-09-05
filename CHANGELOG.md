@@ -1,3 +1,21 @@
+## [0.3.3] - 2026-09-05
+
+### Fixed
+- **`labschctl` HTTP 1010 against Cloudflare Workers** — the default
+  `User-Agent: Python-urllib/...` from `urllib.request` was being blocked
+  by Cloudflare's global edge protection on `*.workers.dev` (HTTP 403,
+  error code 1010). The block is a CF global policy and cannot be
+  disabled from the per-account WAF (which requires Enterprise / add-on
+  on this account). `labschctl` now sets `User-Agent: labschctl/0.3.3` on
+  every request, which CF accepts. No server-side change.
+
+### Notes
+- CLI now syncs fully into the repo — the in-repo `skill/labschctl` was
+  behind the live `/opt/labsch/skill/labschctl` and was missing the
+  `cmd_token` subcommand. Both files are now in sync at v0.3.3.
+- This is a CLI-only patch; agent `.exe` does not need to be rebuilt.
+  Existing installs keep working.
+
 ## [0.3.2] - 2026-09-05
 
 ### Added
