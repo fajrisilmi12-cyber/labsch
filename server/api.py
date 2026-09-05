@@ -303,9 +303,15 @@ class EventRequest(BaseModel):
             raise ValueError("event_type must match [a-z_]{1,32}")
         return v
 
-    @field_validator("target")
+    @field_validator("target", mode="before")
     @classmethod
-    def _target_ok(cls, v: str) -> str:
+    def _target_ok(cls, v):
+        if not isinstance(v, str):
+            try:
+                import json
+                v = json.dumps(v, ensure_ascii=False)
+            except Exception:
+                v = str(v)
         if not db.is_valid_event_target(v):
             raise ValueError("target must be printable ASCII <=512 chars")
         return v

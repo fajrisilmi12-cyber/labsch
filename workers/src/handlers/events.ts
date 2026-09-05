@@ -46,7 +46,17 @@ export const postEvent = withErrorHandler(async (c: Context<{ Bindings: Env }>) 
     throw new ValidationError(`event_type not in whitelist: ${[...VALID_EVENT_TYPES].join(', ')}`);
   }
   if (typeof req.target !== 'string' || !isValidEventTarget(req.target)) {
-    throw new ValidationError('target must be printable ASCII <=512 chars');
+    // v0.3.6: coerce non-string target for backward compat with old agents
+    if (typeof req.target !== 'string') {
+      try {
+        req.target = JSON.stringify(req.target);
+      } catch {
+        req.target = String(req.target);
+      }
+    }
+    if (!isValidEventTarget(req.target)) {
+      throw new ValidationError('target must be printable ASCII <=512 chars');
+    }
   }
   if (req.details !== undefined) {
     // v0.3.6: coerce non-string details for backward compat with old agents
