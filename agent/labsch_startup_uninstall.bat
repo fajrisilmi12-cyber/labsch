@@ -3,7 +3,7 @@ setlocal EnableExtensions
 title LabSCH Startup Uninstaller
 
 :: ================================================================
-:: LabSCH STARTUP Uninstaller — hapus semua 4 lapis auto-start
+:: LabSCH STARTUP Uninstaller -- hapus semua 4 lapis auto-start
 :: Jalankan sebagai Administrator.
 :: ================================================================
 

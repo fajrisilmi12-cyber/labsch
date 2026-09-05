@@ -21,16 +21,34 @@ title LabSCHAgent 1-Click Installer
 ::   `Start-Process -Verb RunAs '%~f0'`. If %~f0 contains a single
 ::   quote, the embedded PowerShell string breaks and the elevation
 ::   silently fails.
+:: v0.3.5.1: added pre-elevation echo so user sees the script started
+::   even if UAC silently denies. Also added a PowerShell fallback in
+::   case mshta is blocked (e.g. corporate AV policy).
 :: ----------------------------------------------------------------
+echo.
+echo ================================================================
+echo LabSCHAgent 1-Click Installer
+echo ================================================================
+echo.
+echo [0/5] Mengecek hak Administrator...
 net session >nul 2>&1
 if errorlevel 1 (
+    echo Belum admin -- meminta izin UAC...
+    echo (Klik "Yes" di popup Windows yang akan muncul)
     echo.
-    echo Meminta izin Administrator...
     set "_ELEV_BATCH=%~f0"
     set "_ELEV_DIR=%~dp0"
-    mshta.exe vbscript:execute("CreateObject(""WScript.Shell"").Run ""cmd.exe /c cd /d """"%_ELEV_DIR%"""" && call """"%_ELEV_BATCH%"""""", 0, True:close")
+    :: Primary: mshta trick (works around single-quote-in-path bug)
+    mshta.exe vbscript:execute("CreateObject(""WScript.Shell"").Run ""cmd.exe /c cd /d """"%_ELEV_DIR%"""" && call """"%_ELEV_BATCH%"""" "", 1, True:close")
+    if errorlevel 1 (
+        echo.
+        echo mshta gagal (mungkin diblokir AV). Fallback ke PowerShell...
+        powershell.exe -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WorkingDirectory '%~dp0'"
+    )
     exit /b
 )
+echo       OK (running as Administrator)
+echo.
 
 pushd "%~dp0" >nul 2>&1
 
@@ -81,7 +99,7 @@ echo   - PC-LAB-01 (PC laboratorium nomor 1)
 echo   - PC-GURU-FAJRI (PC guru)
 echo   - PC-TEST-MSI (PC testing, akan dikecualikan dari profile)
 echo.
-echo Kosongkan untuk pakai nama otomatis (PC-{hostname}).
+echo Kosongkan untuk pakai nama otomatis (PC-NAMAPC dari hostname Windows).
 echo.
 set "DISPLAY_NAME="
 set /p "DISPLAY_NAME=Nama PC: "
@@ -167,7 +185,7 @@ echo [3/5] Installing self-protection (scheduled task + Run key + OnBoot)...
 schtasks /delete /tn "LabSCHAgentWatchdog" /f >nul 2>&1
 schtasks /delete /tn "LabSCHAgentOnBoot" /f >nul 2>&1
 
-:: Scheduled task — restart tiap 5 menit kalau agent crash
+:: Scheduled task -- restart tiap 5 menit kalau agent crash
 schtasks /create /tn "LabSCHAgentWatchdog" /tr "python \"%~dp0labsch_agent.py\"" /sc minute /mo 5 /ru SYSTEM /rl HIGHEST /f >nul 2>&1
 if errorlevel 1 (
     echo       WARNING: scheduled task gagal (mungkin nama task sudah ada)
@@ -175,7 +193,7 @@ if errorlevel 1 (
     echo       scheduled task OK (restart tiap 5 menit)
 )
 
-:: OnBoot task — jalan SETIAP BOOT, tanpa perlu user login
+:: OnBoot task -- jalan SETIAP BOOT, tanpa perlu user login
 :: Trigger: At startup. Action: python labsch_agent.py --once
 :: Lalu watchdog akan teruskan via scheduled task
 schtasks /create /tn "LabSCHAgentOnBoot" /tr "python \"%~dp0labsch_agent.py\" --once" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul 2>&1
@@ -185,7 +203,7 @@ if errorlevel 1 (
     echo       OnBoot task OK (auto-start saat boot)
 )
 
-:: Run key — backup untuk user-session
+:: Run key -- backup untuk user-session
 reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "LabSCHAgent" /t REG_SZ /d "python \"%~dp0labsch_agent.py\"" /f >nul 2>&1
 if errorlevel 1 (
     echo       WARNING: Run key gagal

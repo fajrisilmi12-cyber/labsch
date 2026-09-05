@@ -3,16 +3,16 @@ setlocal EnableExtensions EnableDelayedExpansion
 title LabSCH Startup Installer
 
 :: ================================================================
-:: LabSCH STARTUP Installer — pastikan agent JALAN setiap reboot
+:: LabSCH STARTUP Installer -- pastikan agent JALAN setiap reboot
 ::
 :: Yang dipasang (4 lapis, biar gak mungkin miss):
-::   1. Startup folder (user)      — jalan pas user login
-::   2. Startup folder (ALL users) — jalan pas user mana pun login
-::   3. Run key HKLM               — boot-time launch
-::   4. Scheduled task ONSTART     — jalan SEBELUM login (SYSTEM)
+::   1. Startup folder (user)      -- jalan pas user login
+::   2. Startup folder (ALL users) -- jalan pas user mana pun login
+::   3. Run key HKLM               -- boot-time launch
+::   4. Scheduled task ONSTART     -- jalan SEBELUM login (SYSTEM)
 ::
 :: Plus: starter script yang nunggu Python siap (network stack up)
-:: lalu launch agent — ini solusi utama masalah "kadang gak ke load"
+:: lalu launch agent -- ini solusi utama masalah "kadang gak ke load"
 :: (Python/PATH belum siap saat Run key dieksekusi terlalu dini).
 ::
 :: Jalankan SEKALI sebagai Administrator. Selesai.
@@ -51,7 +51,7 @@ echo.
 echo [1/5] Membuat starter script (delayed-launch dengan retry)...
 (
     echo @echo off
-    echo rem LabSCH auto-starter — nunggu sistem siap, lalu launch agent
+    echo rem LabSCH auto-starter -- nunggu sistem siap, lalu launch agent
     echo rem Loop max 60x5s = 5 menit. Kalau python belum siap, retry.
     echo set /a TRIES=0
     echo :wait_python
@@ -91,7 +91,7 @@ if not exist "C:\ProgramData\LabSCHAgent" mkdir "C:\ProgramData\LabSCHAgent" >nu
 echo       OK - C:\ProgramData\LabSCHAgent\labsch_start.bat
 
 :: ----------------------------------------------------------------
-:: [2/5] Startup folder — user ini + ALL users
+:: [2/5] Startup folder -- user ini + ALL users
 :: ----------------------------------------------------------------
 echo [2/5] Memasang di Startup folder (user + all users)...
 set "STARTUP_USER=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"

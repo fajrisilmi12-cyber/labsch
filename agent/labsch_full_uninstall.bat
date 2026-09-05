@@ -3,13 +3,13 @@ setlocal EnableExtensions
 title LabSCH Full Uninstall
 
 :: ================================================================
-:: LabSCH FULL Uninstaller — cabut SEMUANYA:
+:: LabSCH FULL Uninstaller -- cabut SEMUANYA:
 ::   1. Hapus semua blokir (hosts, browser policy, IFEO, Task Mgr)
 ::   2. Hapus semua auto-start (4 lapis)
 ::   3. Hapus config + scheduled tasks + Run key
 ::   4. Matikan proses agent yang lagi jalan
 ::
-:: PC balik ke kondisi BERSIH — gak ada LabSCH, gak ada blokir.
+:: PC balik ke kondisi BERSIH -- gak ada LabSCH, gak ada blokir.
 :: Jalankan sebagai Administrator.
 :: ================================================================
 
