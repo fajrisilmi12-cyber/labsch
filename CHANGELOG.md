@@ -1,3 +1,20 @@
+## [0.3.2] - 2026-09-05
+
+### Added
+- **API token management endpoints** (Workers + FastAPI parity):
+  - `POST /api/admin/token/generate` — generate a fresh 32-byte URL-safe token; return fingerprint + length
+  - `GET /api/admin/token/info` — show fingerprint + length (NEVER returns full token)
+  - `DELETE /api/admin/token` — revoke in-process / clear KV metadata
+- **`labschctl token generate|info|revoke`** CLI subcommand
+- **Workers KV namespace `TOKEN_META`** for token metadata persistence (optional; only needed for the Workers deployment; local FastAPI uses `~/.hermes/.env` instead)
+- **`skill/check_deps.bat`** — dependency checker & auto-installer (Python 3.10+, pip, psutil, requests, msg.exe, admin privileges)
+- **`skill/references/`** — 4 new docs: api-cookbook, cleanup-queries, cloudflared-recovery, server-lifecycle
+
+### Notes
+- Workers: provision KV namespace with `wrangler kv:namespace create "TOKEN_META"` and uncomment the binding in `wrangler.toml` (see file comments).
+- Local FastAPI: token rotation auto-persists to `~/.hermes/.env`.
+- Token itself is NEVER stored server-side — only SHA-256 fingerprint + length + created_at — so KV leak does not leak usable credentials.
+
 # Changelog
 
 All notable changes to LabSCH are documented here. Format follows

@@ -7,9 +7,16 @@ account_id = "6915773741f9ea9f8c7a4146bf0ec087"
 crons = ["*/5 * * * *"]
 
 [vars]
-APP_VERSION = "0.3.0-workers"
+APP_VERSION = "0.3.2-workers"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "labsch-db"
 database_id = "1e25dc09-462e-4abf-a6ba-a0902707df77"
+
+# Optional — required for /api/admin/token/* endpoints
+# Provision:  wrangler kv:namespace create "TOKEN_META"
+# Then uncomment and replace the id below:
+# [[kv_namespaces]]
+# binding = "TOKEN_META"
+# id = "REPLACE_WITH_KV_NAMESPACE_ID"

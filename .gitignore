@@ -57,3 +57,7 @@ node_modules/
 .wrangler/
 *.zip
 
+
+# DB backups (must never be committed — may contain client PII)
+*.db.backup-*
+*.db.backup

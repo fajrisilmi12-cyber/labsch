@@ -15,11 +15,13 @@ import {
 import { setClientCommand, clearClientCommand } from './handlers/admin-command';
 import { setDeviceFlags, getDeviceFlags } from './handlers/admin-device';
 import { markStaleClients } from './handlers/health';
+import { generateApiToken, getTokenInfo, revokeApiToken } from './handlers/admin-token';
 
 export interface Env {
   DB: D1Database;
   SCHOOL_API_TOKEN: string;
   APP_VERSION: string;
+  TOKEN_META?: KVNamespace;  // optional — add via `wrangler kv:namespace create "TOKEN_META"`
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -71,6 +73,11 @@ app.post('/api/admin/device', setDeviceFlags);            // global: {"disable_c
 app.get('/api/admin/device', getDeviceFlags);
 app.post('/api/admin/device/:client_id', setDeviceFlags); // per-PC
 app.delete('/api/admin/device/:client_id', setDeviceFlags); // per-PC: clear override
+
+// Admin — token management (rotate / inspect / revoke metadata)
+app.post('/api/admin/token/generate', generateApiToken);
+app.get('/api/admin/token/info', getTokenInfo);
+app.delete('/api/admin/token', revokeApiToken);
 
 // Cron trigger — mark stale clients as offline
 export default {

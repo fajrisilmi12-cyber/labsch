@@ -342,6 +342,84 @@ async def admin_allow_site(req: StringRequest, _: str = Depends(verify_token)):
     return {"config_version": v}
 
 
+# === Token management (local FastAPI server) ===
+class TokenInfo(BaseModel):
+    fingerprint: str | None = None
+    length: int | None = None
+    created_at: int | None = None
+    message: str | None = None
+
+
+def _hash_token(t: str) -> str:
+    import hashlib
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+@app.post("/api/admin/token/generate")
+async def admin_generate_token(_: str = Depends(verify_token)):
+    """Generate a fresh API token. Persists the fingerprint to ~/.hermes/.env
+    (replacing any previous SCHOOL_API_TOKEN) so the next agent pull works.
+
+    For Workers/D1 deployments this endpoint is mirrored in
+    workers/src/handlers/admin-token.ts — use the CLI:
+        labschctl token generate
+    """
+    new_token = secrets.token_urlsafe(32)
+    fingerprint = _hash_token(new_token)[:12]
+    created_at = int(time.time())
+    # Persist to ~/.hermes/.env
+    env_file = Path.home() / ".hermes" / ".env"
+    if env_file.exists():
+        lines = env_file.read_text().splitlines()
+        out, found = [], False
+        for ln in lines:
+            if ln.strip().startswith("SCHOOL_API_TOKEN="):
+                out.append(f"SCHOOL_API_TOKEN={new_token}")
+                found = True
+            else:
+                out.append(ln)
+        if not found:
+            out.append(f"# School Agent Manager")
+            out.append(f"SCHOOL_API_TOKEN={new_token}")
+        env_file.write_text("\n".join(out) + "\n")
+    # Update in-memory token (so the new token is immediately valid)
+    global API_TOKEN
+    API_TOKEN = new_token
+    return {
+        "token": new_token,
+        "fingerprint": fingerprint,
+        "length": len(new_token),
+        "created_at": created_at,
+        "next_step": (
+            "Token rotated in-memory and persisted to ~/.hermes/.env. "
+            "The NEXT agent that reads SCHOOL_API_TOKEN from .env will use it. "
+            "Already-running agents will need a restart (or wait for their "
+            "config.ini to be updated via the normal pull)."
+        ),
+    }
+
+
+@app.get("/api/admin/token/info", response_model=TokenInfo)
+async def admin_token_info(_: str = Depends(verify_token)):
+    """Show the current token's fingerprint + length. Never returns the full token."""
+    if not API_TOKEN:
+        raise HTTPException(status_code=500, detail="server: API_TOKEN not configured")
+    return TokenInfo(
+        fingerprint=_hash_token(API_TOKEN)[:12],
+        length=len(API_TOKEN),
+        created_at=None,  # not tracked in-process; the Workers KV variant tracks this
+    )
+
+
+@app.delete("/api/admin/token")
+async def admin_revoke_token(_: str = Depends(verify_token)):
+    """Clear the in-process token. The persisted .env value still works for
+    the next process restart unless the caller rotates via /generate first."""
+    global API_TOKEN
+    API_TOKEN = ""
+    return {"ok": True, "message": "in-memory token cleared. Rotate via POST /api/admin/token/generate to fully revoke."}
+
+
 if __name__ == "__main__":
     import uvicorn
     print(f"[labsch] API token: {API_TOKEN[:8]}...{API_TOKEN[-4:]}")

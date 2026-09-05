@@ -14,6 +14,7 @@ Usage:
   labschctl config block-site <domain>
   labschctl config unblock-site <domain>
   labschctl config allow-site <domain>
+  labschctl token generate|info|revoke # API token management
 """
 import argparse
 import json
@@ -364,6 +365,71 @@ def cmd_command_all(args):
     print(f"Done. Queued: {ok}, Failed: {fail}")
 
 
+def cmd_token(args):
+    """Manage API token (Workers / D1 deployment).
+
+    generate  — generate a fresh random token (returned once)
+    info      — show fingerprint + created_at of the current token
+    revoke    — clear KV metadata (force a new token on next deploy)
+    """
+    if args.action == "generate":
+        if not args.yes:
+            print("This will generate a NEW API token.")
+            print("The OLD token (if any) will continue to work until you redeploy")
+            print("with the new SCHOOL_API_TOKEN secret.")
+            confirm = input("Proceed? [y/N] ").strip().lower()
+            if confirm != "y":
+                print("Aborted.")
+                return
+        result = call("POST", "/api/admin/token/generate")
+        if result:
+            print("=" * 60)
+            print(f"NEW API TOKEN  (length={result.get('length')})")
+            print(f"  fingerprint : {result.get('fingerprint')}")
+            print(f"  created_at  : {result.get('created_at')}")
+            print(f"  token       : {result.get('token')}")
+            print("=" * 60)
+            print()
+            print("SAVE THIS NOW — the token will not be shown again.")
+            print()
+            print("Next steps:")
+            print("  1. wrangler secret put SCHOOL_API_TOKEN")
+            print(f"     (paste: {result.get('token')})")
+            print("  2. wrangler deploy")
+            print("  3. Update agent config.ini or install.bat on all clients with the new token")
+            print("  4. labschctl token info    # confirm after deploy")
+        return
+
+    if args.action == "info":
+        info = call("GET", "/api/admin/token/info")
+        if info:
+            if info.get("detail"):
+                print(f"ERROR: {info['detail']}")
+            elif info.get("fingerprint"):
+                import time
+                ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(info["created_at"]))
+                print(f"Current token fingerprint : {info['fingerprint']}")
+                print(f"Token length              : {info.get('length', '?')}")
+                print(f"Created at                : {ts} UTC")
+            else:
+                print("No token has been generated yet.")
+                print("Run: labschctl token generate")
+        return
+
+    if args.action == "revoke":
+        if not args.yes:
+            print("This will CLEAR the token metadata in KV.")
+            print("The actual SCHOOL_API_TOKEN secret will still work until you rotate it.")
+            confirm = input("Proceed? [y/N] ").strip().lower()
+            if confirm != "y":
+                print("Aborted.")
+                return
+        result = call("DELETE", "/api/admin/token")
+        if result:
+            print(f"OK: {result.get('message')}")
+        return
+
+
 def main():
     parser = argparse.ArgumentParser(description="labschctl — control labsch-manager server")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -425,6 +491,11 @@ def main():
     p_command_all.add_argument("--yes", action="store_true",
                                help="skip confirmation prompt")
     p_command_all.set_defaults(func=cmd_command_all)
+
+    p_token = sub.add_parser("token", help="manage API token (Workers KV-backed)")
+    p_token.add_argument("action", choices=["generate", "info", "revoke"])
+    p_token.add_argument("--yes", action="store_true", help="skip confirmation prompt")
+    p_token.set_defaults(func=cmd_token)
 
     args = parser.parse_args()
     args.func(args)

@@ -1,7 +1,7 @@
 ---
 name: labsch
 description: Lab School Manager — manage 20+ Windows lab PCs from a single Hermes homeserver. Use when user asks to install/uninstall LabSCH agent on lab PCs, block websites or apps centrally, push rule profiles, view client status, remote shutdown/restart a PC, or troubleshoot agent/server connectivity. Also load when the server itself isn't running, when systemd needs to be set up, or when the Cloudflare tunnel URL changes.
-version: 0.2.1+lock,notify
+version: 0.3.2
 author: Fajri (Muhammad Al-Fajri Silmi)
 license: MIT
 ---
