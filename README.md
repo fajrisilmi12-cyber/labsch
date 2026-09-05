@@ -4,7 +4,7 @@
 [![Cloudflare Workers](https://img.shields.io/badge/server-Cloudflare%20Workers%20%2B%20D1-orange.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11%20LTSC-blue.svg)]()
-[![Status: v0.3.1](https://img.shields.io/badge/status-v0.3.1--workers-green.svg)]()
+[![Status: v0.3.2](https://img.shields.io/badge/status-v0.3.2--workers-green.svg)]()
 
 Centralized Windows lab management for 20+ PCs — **100% serverless**. Push block/allow rules, app-block policies, and camera/audio controls to lightweight Python agents on each client. The agent runs as a Windows service, can't be killed by students, and identifies each PC by its MAC address (so reinstalls never create duplicate records).
 
@@ -23,6 +23,29 @@ Centralized Windows lab management for 20+ PCs — **100% serverless**. Push blo
 - 🪟 **Windows 10/11 LTSC** — Tested on MSI Thin 15 (LTSC), should work on Pro/Home/Enterprise.
 - ⚡ **Serverless edge** — Cloudflare Workers global anycast, <50ms latency from Indonesia, 100k requests/day free.
 - 🛠️ **Hermes skill** — Bundled admin CLI integrates with the Hermes Agent skill system. Just `labschctl` from any terminal.
+
+
+
+## 🔐 API token management (v0.3.2+)
+
+Rotate your `X-Agent-Token` without redeploying secrets manually:
+
+```bash
+# Generate a new token (returned ONCE, save it!)
+labschctl token generate
+
+# Check current token fingerprint (12-char SHA-256 prefix)
+labschctl token info
+
+# Revoke in-process / clear KV metadata
+labschctl token revoke
+```
+
+**Under the hood:** `POST /api/admin/token/generate`, `GET /api/admin/token/info`, `DELETE /api/admin/token` — Workers KV namespace `TOKEN_META` (provision once: `wrangler kv:namespace create "TOKEN_META"`). For local FastAPI, tokens auto-persist to `~/.hermes/.env`. **The full token is never stored server-side** — only its SHA-256 fingerprint, so a KV / `.env` leak does not leak usable credentials.
+
+## 🛠 API token CLI
+
+`labschctl token <action>` supports `generate`, `info`, `revoke`. The CLI prompts for confirmation unless you pass `--yes`. See `docs/API.md` for full HTTP contract.
 
 ## Architecture
 
@@ -98,7 +121,7 @@ labschctl events --hours 1
 
 ## Deploy to a new PC
 
-1. **Download** `labsch-agent-v0.3.1.zip` from the [Releases](../../releases) page.
+1. **Download** `labsch-agent-v0.3.2.zip` from the [Releases](../../releases) page.
 2. **Copy** to a USB drive or directly to the target PC.
 3. **Extract** the zip.
 4. **Right-click `install.bat` → "Run as administrator"**.
