@@ -1,3 +1,93 @@
+## [0.3.4] - 2026-09-05
+
+### Security & correctness fixes (CLI + server + Workers)
+
+Audit found ~90 bugs across server / agent / CLI / installer. This
+release fixes the CRITICAL and HIGH-priority ones. See the audit
+report (`/root/.hermes/cache/delegation/subagent-summary-*-20260905_*.txt`)
+for the full list. Still-pending items are noted below.
+
+#### CRITICAL fixed (deploys cleanly)
+
+- **`POST /api/admin/config` accepted garbage types** — sending
+  `{"blocked_apps": "not a list"}` would save the string into D1,
+  bricking all agents on next config pull. Now rejects non-arrays /
+  non-strings with HTTP 400 and a clear error. Workers handler
+  (`admin-config.ts:64-118`) and the FastAPI path both updated.
+- **`/api/admin/block-site` returned 500 on empty/null domain** —
+  now returns HTTP 400 with `"\`name\` must be non-empty"`. Same
+  coverage for `block-app`, `unblock-site`, `unblock-app`,
+  `allow-site`.
+- **`build.bat --token YOUR_TOKEN` silently discarded value** — the
+  flag handler was wired to `set "API_TOKEN=<your-uuid-token>"` (the
+  placeholder) instead of `set "API_TOKEN=%~2"`. Every exe shipped
+  with the literal placeholder token, so all agents 401'd forever.
+  Fixed; also added an explicit guard that errors out if the token
+  still equals the placeholder.
+- **`uninstall.bat` did not delete `LabSCHAgentOnBoot` task** — only
+  `LabSCHAgentWatchdog` was removed. The OnBoot task survived every
+  uninstall and re-launched the agent on every reboot. Now both
+  tasks are deleted.
+
+#### HIGH fixed
+
+- **`labschctl resolve_client_id` did substring match** — typing
+  `pc` would match BOTH `PC-LAB-01` and `PC-GURU-FAJRI` (returning
+  whichever the server sent first); typing 3 chars of any UUID
+  silently targeted that client. Now exact (case-insensitive)
+  match against display_name, hostname, and client_id only.
+- **`labschctl` URL encoding bug** — `?`, `&`, `=` were marked safe
+  in `urllib.parse.quote`, so user-supplied query values were not
+  URL-encoded. `labschctl events --client-id "foo&event_type=..."`
+  injected an `event_type` parameter the admin never typed. Now
+  path and query are split before encoding.
+- **`labschctl client-config set <name>` (no flags) silently wiped
+  per-PC override** — sent `{}` body which the server interpreted
+  as "no override rules", indistinguishable from `clear`. Now
+  refuses with HTTP 400 and explicit hint to use `clear`.
+- **`labschctl unblock-all` silently swallowed partial failures** —
+  one of the three clear endpoints failing returned `Done. All
+  blocks cleared.` anyway. Now counts failures and exits non-zero
+  with a clear error if any endpoint failed.
+- **`labschctl profile activate/show/delete` exited 0 on 404** —
+  `call()` printed the error to stderr but the handlers returned
+  without surfacing the failure to stdout. Now print ERROR and exit
+  non-zero so operators can detect typos in profile names.
+- **`labschctl command-all --online-only --yes` against all-offline
+  fleet** — printed `Done. Queued: 0` with exit 0, indistinguishable
+  from a successful no-op. Now exits 2 with a clear
+  `--online-only excluded all N clients` warning.
+- **Workers `auth.ts` token comparison** — was plain `!==` which is
+  vulnerable to timing side-channel. Now constant-time XOR over
+  `Uint8Array`s.
+
+#### Server-side
+
+- **`server/api.py:121` heartbeat returned wrong `canonical_client_id`**
+  — was `req.client_id` (raw incoming) instead of the de-duped
+  `canonical_id` from the database. Agents were storing the wrong
+  identity, breaking admin command routing and per-client overrides.
+
+#### Still pending (audit deferred — non-critical)
+
+The following categories are documented in the audit but not fixed
+in this release; tracked as TODO for v0.3.5/v0.4.0:
+
+- Agent-side: PowerShell command injection in `notify` message,
+  multi-instance agent races, IFEO list_blocked_apps tagging,
+  hosts file atomic writes, config.ini atomic writes, display_name
+  Unicode validation, Python 3.10+ check, `cmd.exe`/`powershell.exe`
+  IFEO-block deny-list
+- Server-side: race conditions in `add/remove_blocked_*` (TOCTOU),
+  config_version non-atomic increment, init_db migration race,
+  no audit log for admin actions, audit-log for token rotation,
+  `ip:8080` plaintext binding, no CORS, no rate-limit
+- CLI: cmd_rename direct SQLite (bypasses API), env reload timing,
+  full labschctl profile show/ delete surface
+
+These are documented; recommend a hardening pass before deploying
+to production with >20 PCs and public-internet exposure.
+
 ## [0.3.3] - 2026-09-05
 
 ### Fixed

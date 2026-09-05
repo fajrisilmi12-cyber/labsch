@@ -24,8 +24,9 @@ echo LabSCHAgent Uninstaller
 echo ================================================================
 echo.
 
-echo [1/4] Removing scheduled task...
+echo [1/4] Removing scheduled tasks...
 schtasks /delete /tn "LabSCHAgentWatchdog" /f >nul 2>&1
+schtasks /delete /tn "LabSCHAgentOnBoot" /f >nul 2>&1
 echo       OK
 
 echo [2/4] Removing Run key...

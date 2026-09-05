@@ -118,7 +118,7 @@ async def heartbeat(req: HeartbeatRequest, _: str = Depends(verify_token)):
         blocked_apps=cfg["blocked_apps"],
         blocked_websites=cfg["blocked_websites"],
         allowed_websites=cfg["allowed_websites"],
-        canonical_client_id=req.client_id,
+        canonical_client_id=canonical_id,
         pending_command=pending_command,
     )
 

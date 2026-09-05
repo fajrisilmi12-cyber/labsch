@@ -17,8 +17,8 @@ async function readConfig(db: D1Database) {
 
 async function writeConfig(
   db: D1Database,
-  blockedApps: string[], blockedWebsites: string[],
-  allowedWebsites: string[], updatedBy: string = 'admin'
+  blockedApps: string[], blockedWebsites: string[], allowedWebsites: string[],
+  updatedBy: string = 'admin'
 ): Promise<number> {
   const row = await db.prepare('SELECT config_version FROM config WHERE id = 1').first<any>();
   const newVersion = (row?.config_version ?? 0) + 1;
@@ -33,6 +33,28 @@ async function writeConfig(
   return newVersion;
 }
 
+// v0.3.4: Type-safe coercion. Refuses any non-array / non-string payload
+// instead of silently JSON-stringifying it into a malformed config that
+// bricks all agents on next config pull.
+function ensureStringArray(v: unknown, fieldName: string): string[] {
+  if (!Array.isArray(v)) {
+    throw new Error(`${fieldName} must be an array, got ${typeof v}`);
+  }
+  return v.map((item, i) => {
+    if (typeof item !== 'string') {
+      throw new Error(`${fieldName}[${i}] must be a string, got ${typeof item}`);
+    }
+    const trimmed = item.trim();
+    if (trimmed.length === 0) {
+      throw new Error(`${fieldName}[${i}] must be a non-empty string`);
+    }
+    if (trimmed.length > 253) {
+      throw new Error(`${fieldName}[${i}] exceeds 253 chars`);
+    }
+    return trimmed;
+  });
+}
+
 export async function adminGetConfig(c: Context<{ Bindings: Env }>) {
   const cfg = await readConfig(c.env.DB);
   if (!cfg) return c.json({}, 404);
@@ -40,14 +62,23 @@ export async function adminGetConfig(c: Context<{ Bindings: Env }>) {
 }
 
 export async function adminSetConfig(c: Context<{ Bindings: Env }>) {
-  const req = await c.req.json<{
-    blocked_apps?: string[]; blocked_websites?: string[]; allowed_websites?: string[];
-  }>();
-  const v = await writeConfig(
-    c.env.DB,
-    req.blocked_apps ?? [], req.blocked_websites ?? [], req.allowed_websites ?? [],
-  );
-  return c.json({ config_version: v });
+  let req: {
+    blocked_apps?: unknown; blocked_websites?: unknown; allowed_websites?: unknown;
+  };
+  try {
+    req = await c.req.json<typeof(req)>();
+  } catch {
+    return c.json({ detail: 'invalid JSON body' }, 400);
+  }
+  try {
+    const apps = ensureStringArray(req.blocked_apps ?? [], 'blocked_apps');
+    const sites = ensureStringArray(req.blocked_websites ?? [], 'blocked_websites');
+    const allowed = ensureStringArray(req.allowed_websites ?? [], 'allowed_websites');
+    const v = await writeConfig(c.env.DB, apps, sites, allowed);
+    return c.json({ config_version: v });
+  } catch (e) {
+    return c.json({ detail: (e as Error).message }, 400);
+  }
 }
 
 async function mutateList(
@@ -56,15 +87,31 @@ async function mutateList(
   action: 'add' | 'remove',
 ) {
   const db = c.env.DB;
-  const req = await c.req.json<{ name: string }>();
+  let req: { name?: unknown };
+  try {
+    req = await c.req.json<typeof(req)>();
+  } catch {
+    return c.json({ detail: 'invalid JSON body' }, 400);
+  }
+  const name = req.name;
+  if (typeof name !== 'string') {
+    return c.json({ detail: '`name` must be a string' }, 400);
+  }
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    return c.json({ detail: '`name` must be non-empty' }, 400);
+  }
+  if (trimmed.length > 253) {
+    return c.json({ detail: '`name` exceeds 253 chars' }, 400);
+  }
+
   const cfg = await readConfig(db);
   if (!cfg) return c.json({ detail: 'config not initialized' }, 500);
 
   const list: string[] = [...cfg[listKey]];
-  const name = req.name;
-  if (action === 'add' && !list.includes(name)) list.push(name);
-  if (action === 'remove' && list.includes(name)) {
-    list.splice(list.indexOf(name), 1);
+  if (action === 'add' && !list.includes(trimmed)) list.push(trimmed);
+  if (action === 'remove' && list.includes(trimmed)) {
+    list.splice(list.indexOf(trimmed), 1);
   }
 
   const args: Record<string, [string[], string[], string[]]> = {

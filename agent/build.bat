@@ -23,7 +23,7 @@ if /i "%~1"=="--server" (
     goto :parse_args
 )
 if /i "%~1"=="--token" (
-    set "API_TOKEN=<your-uuid-token>"
+    set "API_TOKEN=%~2"
     shift
     shift
     goto :parse_args
@@ -42,6 +42,10 @@ goto :parse_args
 if "%API_TOKEN%"=="" (
     echo WARNING: No --token provided. Agent will require --setup on first run.
     echo.
+) else if "%API_TOKEN%"=="<your-uuid-token>" (
+    echo ERROR: --token still equals the placeholder. Pass --token YOUR_TOKEN.
+    echo        (The placeholder was previously embedded into the .exe by mistake.)
+    exit /b 2
 )
 
 REM Check Python
