@@ -17,13 +17,13 @@ title LabSCHAgent 1-Click Installer
 
 :: ----------------------------------------------------------------
 :: 0. Auto-elevate ke Administrator
-:: v0.3.5: use mshta trick to avoid single-quote-in-path bug in
-::   `Start-Process -Verb RunAs '%~f0'`. If %~f0 contains a single
-::   quote, the embedded PowerShell string breaks and the elevation
-::   silently fails.
-:: v0.3.5.1: added pre-elevation echo so user sees the script started
-::   even if UAC silently denies. Also added a PowerShell fallback in
-::   case mshta is blocked (e.g. corporate AV policy).
+:: v0.3.6.2: REMOVED auto-elevation entirely. Previous attempts
+::   (mshta trick, nested cmd/call, simple Start-Process) all caused
+::   either silent exit or infinite UAC loops on some Windows
+::   configs. The user reported "window banyak banget" which means
+::   the elevation was recursing.
+::   WORKAROUND: just print a clear warning if not admin, and tell
+::   user to Run as Administrator. Reliable, no recursion possible.
 :: ----------------------------------------------------------------
 echo.
 echo ================================================================
@@ -33,19 +33,24 @@ echo.
 echo [0/5] Mengecek hak Administrator...
 net session >nul 2>&1
 if errorlevel 1 (
-    echo Belum admin -- meminta izin UAC...
-    echo (Klik "Yes" di popup Windows yang akan muncul)
     echo.
-    set "_ELEV_BATCH=%~f0"
-    set "_ELEV_DIR=%~dp0"
-    :: Primary: mshta trick (works around single-quote-in-path bug)
-    mshta.exe vbscript:execute("CreateObject(""WScript.Shell"").Run ""cmd.exe /c cd /d """"%_ELEV_DIR%"""" && call """"%_ELEV_BATCH%"""" "", 1, True:close")
-    if errorlevel 1 (
-        echo.
-        echo mshta gagal (mungkin diblokir AV). Fallback ke PowerShell...
-        powershell.exe -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs -WorkingDirectory '%~dp0'"
-    )
-    exit /b
+    echo =====================================================
+    echo  PERHATIAN: Belum ada hak Administrator!
+    echo =====================================================
+    echo.
+    echo CARA YANG BENAR:
+    echo   1. TUTUP window ini
+    echo   2. Klik kanan file install.bat
+    echo   3. Pilih "Run as administrator"
+    echo   4. Klik "Yes" di popup UAC
+    echo.
+    echo JANGAN double-click biasa! Harus klik kanan - Run as admin.
+    echo.
+    echo Window ini akan tutup dalam 30 detik. Tekan tombol apa saja
+    echo untuk tutup sekarang, atau tutup manual dengan klik X.
+    echo.
+    timeout /t 30 /nobreak >nul 2>&1
+    exit /b 1
 )
 echo       OK (running as Administrator)
 echo.

@@ -14,9 +14,8 @@ binding = "DB"
 database_name = "labsch-db"
 database_id = "1e25dc09-462e-4abf-a6ba-a0902707df77"
 
-# Optional — required for /api/admin/token/* endpoints
-# Provision:  wrangler kv:namespace create "TOKEN_META"
-# Then uncomment and replace the id below:
-# [[kv_namespaces]]
-# binding = "TOKEN_META"
-# id = "REPLACE_WITH_KV_NAMESPACE_ID"
+# Token management KV (created 2026-09-05 via wrangler kv namespace create TOKEN_META)
+[[kv_namespaces]]
+binding = "TOKEN_META"
+id = "80b20c08742e43eb86f05d80d885a3fb"
+preview_id = "cc67549c5f2f4632bd9d969cb1c14769"
