@@ -394,6 +394,8 @@ SQLite at `/opt/labsch/server/data/labsch.db`. Tables:
   `activated_at`)
 - `client_overrides` — per-PC overrides (same 3 lists + `updated_at`)
 - `events` — log of agent events (`config_applied`, `blocked_app`, etc.)
+- `tokens` — API token metadata (fingerprint SHA256[0:8], created_at,
+  last_used_at, revoked_at) — v0.3.2+
 
 Migrations are automatic: missing columns are added with `ALTER TABLE` on
 server startup.
