@@ -57,6 +57,10 @@ def call(method: str, path: str, body: dict = None) -> dict | list | None:
     data = json.dumps(body).encode() if body else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("X-Agent-Token", API_TOKEN)
+    # Override default Python-urllib UA — Cloudflare edge returns HTTP 1010
+    # for python-urllib User-Agent against *.workers.dev (Workers global policy,
+    # not configurable per-account). labschctl/0.2.1 is friendly.
+    req.add_header("User-Agent", "labschctl/0.2.1")
     if data:
         req.add_header("Content-Type", "application/json")
     try:
