@@ -14,6 +14,14 @@ import subprocess
 from typing import Optional
 
 
+# v0.3.5 — subprocess.CREATE_NO_WINDOW so spawned getmac.exe never flashes
+# a console window at the student. Fall back to 0 on non-Windows.
+try:
+    _NO_WINDOW = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+except AttributeError:
+    _NO_WINDOW = 0
+
+
 def get_primary_mac() -> Optional[str]:
     """Get the MAC address of the primary network adapter.
 
@@ -30,9 +38,11 @@ def get_primary_mac() -> Optional[str]:
 def _get_mac_windows() -> Optional[str]:
     """Use 'getmac' command on Windows. Returns first non-empty MAC."""
     try:
+        # v0.3.5 — explicit timeout + CREATE_NO_WINDOW (no console flash).
         result = subprocess.run(
             ["getmac", "/fo", "csv", "/nh"],
             capture_output=True, text=True, timeout=10,
+            creationflags=_NO_WINDOW,
         )
         if result.returncode != 0:
             return None

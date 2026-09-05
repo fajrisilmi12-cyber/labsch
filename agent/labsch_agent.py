@@ -10,9 +10,22 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import time
+import fcntl
+import subprocess
 from pathlib import Path
+
+# v0.3.5 — enforce Python 3.10+ (Windows 10 LTSC 2021 baseline; walrus/pattern
+# matching in helper code paths). Fail loudly instead of silently misbehaving.
+if sys.version_info < (3, 10):
+    print(
+        f"FATAL: LabSCHAgent v0.3.5 requires Python 3.10 or newer (you have "
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}).",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 # Make sibling modules importable when run as script
 sys.path.insert(0, str(Path(__file__).parent))
@@ -25,6 +38,83 @@ import browser_policy
 import self_protect
 import device_id
 import device_blocker
+
+# v0.3.5 — subprocess.CREATE_NO_WINDOW so spawned reg.exe/schtasks.exe/etc.
+# never flash a console window at the student. Constant is Windows-only;
+# fall back to 0 on other platforms so dev on Linux still works.
+try:
+    _NO_WINDOW = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+except AttributeError:
+    _NO_WINDOW = 0
+
+# v0.3.5 — display_name rules mirror server regex
+# (server-side: /^[A-Za-z0-9 ._-]{1,64}$/). Used for early validation so the
+# user gets a clear local error instead of a server-side rejection.
+_DISPLAY_NAME_RE = re.compile(r"^[A-Za-z0-9 ._-]{1,64}$")
+
+# v0.3.5 — single-instance file lock. Prevents two agent processes from
+# simultaneously writing registry/hosts (last-writer-wins, inconsistent state).
+LOCK_FILE = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "LabSCHAgent" / "agent.lock"
+
+
+def _acquire_single_instance_lock() -> int:
+    """Acquire an exclusive cross-platform file lock for the agent singleton.
+
+    Returns the fd on success. Raises OSError if another instance already
+    holds the lock — caller should exit cleanly with a non-zero status.
+    """
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        os.close(fd)
+        raise
+    # Stash PID so the user / log can identify the holder if needed.
+    try:
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode("utf-8"))
+        os.fsync(fd)
+    except OSError:
+        pass
+    return fd
+
+
+# v0.3.5 — chars that must NEVER appear in a 'notify' message: a single quote
+# breaks the PowerShell single-quoted string, `$` enables sub-expression
+# injection, parens enable call grouping, semicolons chain statements,
+# backtick enables escape tricks, `\\` enables escape-sequence injection,
+# and any non-printable / non-ASCII byte could break terminal output. The
+# server already enforces this; this is defense-in-depth.
+_NOTIFY_FORBIDDEN = set("'" + '"' + "$" + "`" + "()" + ";" + "\\" + "\n" + "\r" + "\0")
+
+
+def _is_safe_notify_message(msg: str) -> bool:
+    """Return True iff `msg` is safe to splice into a PowerShell single-quoted
+    string. Length cap matches the server-side cap (200 chars).
+    """
+    if not isinstance(msg, str):
+        return False
+    if len(msg) == 0 or len(msg) > 200:
+        return False
+    if any(ord(c) < 0x20 or ord(c) > 0x7E for c in msg):
+        return False
+    if any(c in _NOTIFY_FORBIDDEN for c in msg):
+        return False
+    return True
+
+
+def _ps_quote(s: str) -> str:
+    """Quote a string for use as a single PowerShell command-line argument.
+
+    PowerShell strips the outermost pair of double quotes from the
+    -Command argument and concatenates the rest verbatim, so we wrap the
+    payload in double quotes and escape embedded `"` and backticks. The
+    order matters: we MUST double-escape backticks first (otherwise our
+    own backtick-escaped `"` would itself get doubled).
+    """
+    return '"' + s.replace("`", "``").replace('"', '`"') + '"'
+
 
 # Config
 DEFAULT_HEARTBEAT_INTERVAL = 30  # seconds (overridable via config.ini: heartbeat_interval)
@@ -47,7 +137,7 @@ def load_agent_config() -> dict:
             "is_test": False,
             "version": "0.1.0",
         }
-        CONFIG_FILE.write_text(json.dumps(default, indent=2))
+        _atomic_write_json(CONFIG_FILE, default)
         return default
     cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
     # Backfill new fields for old configs
@@ -59,8 +149,36 @@ def load_agent_config() -> dict:
 
 
 def save_agent_config(cfg: dict) -> None:
+    """v0.3.5 — atomic write so a crash mid-write never leaves a half-written
+    config.json (which would brick the agent on next boot)."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+    _atomic_write_json(CONFIG_FILE, cfg)
+
+
+def _atomic_write_json(path: Path, data: dict) -> None:
+    """Write JSON atomically: temp file in same dir, then os.replace.
+
+    Same-directory temp + os.replace is atomic on NTFS and POSIX, so the
+    reader either sees the old file or the new one — never a torn write.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                pass
+        os.replace(tmp, path)
+    except Exception:
+        # Don't leave stale .tmp behind if replace failed.
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def get_identity() -> tuple:
@@ -195,48 +313,74 @@ def run_loop(cfg: dict) -> None:
                     if pending:
                         print(f"[labsch_agent] received remote command: {pending}", flush=True)
                         client.log_event("command_received", pending)
+                        # v0.3.5 — all subprocess helpers get explicit timeout
+                        # + CREATE_NO_WINDOW so a hung helper or flashing console
+                        # never disrupts the student.
                         if pending == "shutdown":
-                            import subprocess
-                            subprocess.Popen(["shutdown", "/s", "/t", "5", "/c", "LabSCH remote shutdown"])
+                            subprocess.run(
+                                ["shutdown", "/s", "/t", "5", "/c", "LabSCH remote shutdown"],
+                                timeout=10, creationflags=_NO_WINDOW,
+                            )
                         elif pending == "restart":
-                            import subprocess
-                            subprocess.Popen(["shutdown", "/r", "/t", "5", "/c", "LabSCH remote restart"])
+                            subprocess.run(
+                                ["shutdown", "/r", "/t", "5", "/c", "LabSCH remote restart"],
+                                timeout=10, creationflags=_NO_WINDOW,
+                            )
                         elif pending == "lock":
-                            import subprocess
-                            subprocess.Popen(["rundll32.exe", "user32.dll,LockWorkStation"])
+                            subprocess.run(
+                                ["rundll32.exe", "user32.dll,LockWorkStation"],
+                                timeout=10, creationflags=_NO_WINDOW,
+                            )
                         elif pending == "notify":
-                            import subprocess
                             message = cfg_resp.get("pending_command_message") or "Message from admin"
-                            # Popup must appear on the ACTIVE USER session, not session 0
-                            # (service context). Use msg.exe (Terminal Services message)
-                            # which targets the console session directly. Fallback:
-                            # scheduled task one-shot running in user context.
-                            safe_msg = message.replace('"', "'").replace("`", "'")
+                            # v0.3.5 — defense-in-depth validation. Server-side
+                            # already rejects non-ASCII / quotes / `$` / backslash,
+                            # but if a future server regression ships a hostile
+                            # message, we'd otherwise inject into a PowerShell
+                            # single-quoted string and pop arbitrary dialogs or
+                            # execute commands. Hard-reject locally and fall back
+                            # to a safe default.
+                            if not _is_safe_notify_message(message):
+                                client.log_event("notify_rejected", "unsafe message payload")
+                                message = "Message from admin"
+                            safe_msg = message
                             launched = False
                             # Preferred: msg.exe → shows native message box in user session
+                            # v0.3.5 — explicit timeout + CREATE_NO_WINDOW so reg.exe
+                            # helpers never flash a console at the student.
                             try:
                                 r = subprocess.run(
                                     ["msg.exe", "console", safe_msg],
                                     capture_output=True, timeout=10,
+                                    creationflags=_NO_WINDOW,
                                 )
                                 launched = (r.returncode == 0)
                             except Exception:
                                 launched = False
                             if not launched:
-                                # Fallback: one-shot scheduled task in active session
+                                # Fallback: one-shot scheduled task in active session.
+                                # v0.3.5 — same explicit timeout + CREATE_NO_WINDOW.
                                 try:
+                                    ps_cmd = (
+                                        "Add-Type -AssemblyName System.Windows.Forms; "
+                                        "[System.Windows.Forms.MessageBox]::Show('"
+                                        + safe_msg.replace("'", "''")
+                                        + "', 'LabSCH Notify')"
+                                    )
                                     subprocess.run(
                                         ["schtasks", "/Create", "/F", "/SC", "ONCE",
                                          "/ST", "23:59", "/TN", "LabSCHNotify",
                                          "/TR",
-                                         "powershell -NoProfile -WindowStyle Hidden "
-                                         "-Command \"Add-Type -AssemblyName "
-                                         "System.Windows.Forms; "
-                                         "[System.Windows.Forms.MessageBox]::Show('"
-                                         + safe_msg + "', 'LabSCH Notify')\""],
-                                        capture_output=True, timeout=10)
-                                    subprocess.run(["schtasks", "/Run", "/TN", "LabSCHNotify"],
-                                                   capture_output=True, timeout=10)
+                                         "powershell -NoProfile -WindowStyle Hidden -Command "
+                                         + _ps_quote(ps_cmd)],
+                                        capture_output=True, timeout=10,
+                                        creationflags=_NO_WINDOW,
+                                    )
+                                    subprocess.run(
+                                        ["schtasks", "/Run", "/TN", "LabSCHNotify"],
+                                        capture_output=True, timeout=10,
+                                        creationflags=_NO_WINDOW,
+                                    )
                                 except Exception:
                                     pass
                         # clear the pending command regardless of type
@@ -274,6 +418,7 @@ def setup() -> None:
     p.add_argument("--server", help="Server URL (skip prompt)")
     p.add_argument("--token", help="API token (skip prompt)")
     p.add_argument("--client-id", help="Client ID (blank=auto)")
+    p.add_argument("--display-name", help="Display name (skip prompt)")
     setup_args, _ = p.parse_known_args()
 
     print("=== LabSCHAgent Setup ===", flush=True)
@@ -313,11 +458,55 @@ def setup() -> None:
     elif setup_args.client_id:
         cfg["client_id"] = setup_args.client_id
 
+    # v0.3.5 — display_name: validate + normalize BEFORE save. Server-side
+    # regex is /^[A-Za-z0-9 ._-]{1,64}$/; we mirror it locally so the user
+    # sees a clear error at install time instead of a server rejection. We
+    # also strip whitespace and title-case the result, because the server
+    # lookup is case-sensitive and the install prompt accepts any casing.
+    while True:
+        if setup_args.display_name:
+            raw = setup_args.display_name
+        else:
+            existing = cfg.get("display_name", "")
+            try:
+                raw = input(f"Display name (e.g. PC-12-Lab-A) [{existing}]: ").strip()
+            except (EOFError, OSError):
+                raw = existing
+        if not raw:
+            cfg["display_name"] = ""
+            break
+        normalized = _normalize_display_name(raw)
+        if not _DISPLAY_NAME_RE.match(normalized):
+            print(
+                f"[!] Invalid display name. Allowed: letters, digits, space, "
+                f"underscore, hyphen, period. 1–64 chars. Got: {raw!r}",
+                file=sys.stderr,
+            )
+            if setup_args.display_name:
+                # Non-interactive: bail out rather than loop forever.
+                sys.exit(2)
+            continue
+        cfg["display_name"] = normalized
+        break
+
     save_agent_config(cfg)
     print(f"Config saved to: {CONFIG_FILE}", flush=True)
-    print(f"  server_url: {cfg['server_url']}", flush=True)
-    print(f"  api_token:  {cfg['api_token'][:8]}...", flush=True)
-    print(f"  client_id:  {cfg.get('client_id', '(auto)')}", flush=True)
+    print(f"  server_url:    {cfg['server_url']}", flush=True)
+    print(f"  api_token:     {cfg['api_token'][:8]}...", flush=True)
+    print(f"  client_id:     {cfg.get('client_id', '(auto)')}", flush=True)
+    print(f"  display_name:  {cfg.get('display_name', '')}", flush=True)
+
+
+def _normalize_display_name(raw: str) -> str:
+    """v0.3.5 — strip whitespace and title-case before saving.
+
+    Server-side lookup is case-sensitive, so a user typing "lab-a-3"
+    must match "Lab-A-3" stored by another install path. Title-case via
+    str.title() is good enough for ASCII display names (the only chars
+    the regex allows); we also collapse runs of whitespace.
+    """
+    s = " ".join(raw.split())
+    return s.title()
 
 
 def main():
@@ -326,6 +515,7 @@ def main():
     parser.add_argument("--server", help="Server URL (for --setup)")
     parser.add_argument("--token", help="API token (for --setup)")
     parser.add_argument("--client-id", help="Client ID (for --setup)")
+    parser.add_argument("--display-name", help="Display name (for --setup)")
     parser.add_argument("--once", action="store_true", help="Run heartbeat once and exit")
     parser.add_argument("--protect", action="store_true", help="Install self-protection (run as Admin)")
     parser.add_argument("--unprotect", action="store_true", help="Remove self-protection")
@@ -341,10 +531,24 @@ def main():
             sys.argv += ["--token", args.token]
         if args.client_id:
             sys.argv += ["--client-id", args.client_id]
+        if args.display_name:
+            sys.argv += ["--display-name", args.display_name]
         setup()
         return
 
     cfg = load_agent_config()
+
+    # v0.3.5 — acquire single-instance lock. A second agent process would
+    # otherwise race the first on registry/hosts writes (last-writer-wins
+    # leaves the PC in an inconsistent state). If we lose the race we exit
+    # cleanly so the existing agent keeps running.
+    try:
+        _lock_fd = _acquire_single_instance_lock()
+    except (OSError, BlockingIOError):
+        print("[labsch_agent] another instance is already running, exiting",
+              file=sys.stderr, flush=True)
+        sys.exit(0)
+
     if args.protect:
         # Install self-protection layers
         agent_path = sys.executable  # python.exe or LabSCHAgent.exe

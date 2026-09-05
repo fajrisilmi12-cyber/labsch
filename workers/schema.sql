@@ -13,8 +13,13 @@ CREATE TABLE IF NOT EXISTS clients (
     display_name TEXT DEFAULT '',
     is_test INTEGER DEFAULT 0,
     pending_command TEXT DEFAULT NULL,
-    pending_command_message TEXT DEFAULT NULL
+    pending_command_message TEXT DEFAULT NULL,
+    pending_command_expires_at REAL DEFAULT NULL
 );
+
+-- v0.3.5: idempotent column add for existing deployments
+-- (D1 doesn't support IF NOT EXISTS for ADD COLUMN, so we use
+-- a try/catch in a separate migration query.)
 
 CREATE INDEX IF NOT EXISTS idx_clients_device ON clients(device_id);
 CREATE INDEX IF NOT EXISTS idx_clients_mac ON clients(mac);

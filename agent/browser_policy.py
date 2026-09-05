@@ -14,6 +14,14 @@ import subprocess
 from typing import Iterable
 
 
+# v0.3.5 — subprocess.CREATE_NO_WINDOW so spawned reg.exe never flashes a
+# console window at the student. Fall back to 0 on non-Windows.
+try:
+    _NO_WINDOW = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+except AttributeError:
+    _NO_WINDOW = 0
+
+
 # Chromium-based browser registry paths
 BROWSER_POLICIES = {
     "edge": r"HKLM\SOFTWARE\Policies\Microsoft\Edge",
@@ -36,7 +44,11 @@ def _reg_add(key_path: str, value_name: str, value: str, reg_type: str = "REG_SZ
         "/f",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        # v0.3.5 — explicit timeout + CREATE_NO_WINDOW (no console flash).
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10,
+            creationflags=_NO_WINDOW,
+        )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         return False
@@ -46,7 +58,10 @@ def _reg_delete(key_path: str, value_name: str) -> bool:
     """Delete a registry value."""
     cmd = ["reg", "delete", key_path, "/v", value_name, "/f"]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10,
+            creationflags=_NO_WINDOW,
+        )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         return False
@@ -56,7 +71,10 @@ def _reg_delete_key(key_path: str) -> bool:
     """Delete an entire registry key (subkey)."""
     cmd = ["reg", "delete", key_path, "/f"]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=10,
+            creationflags=_NO_WINDOW,
+        )
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         return False

@@ -1,5 +1,6 @@
-// Device control helpers — camera/audio disable flags
+// Device control helpers — camera/audio disable flags.
 // Stored as columns on config (global) and client_overrides (per-PC).
+// v0.3.5: presence is determined by row existence, not flag values.
 
 export interface DeviceFlags {
   disable_camera: number;
@@ -20,13 +21,16 @@ export async function getGlobalFlags(db: D1Database): Promise<DeviceFlags> {
 }
 
 export async function getEffectiveFlags(
-  db: D1Database, clientId: string
+  db: D1Database, clientId: string,
 ): Promise<DeviceFlags> {
-  // Per-PC override wins; otherwise global
+  // v0.3.5: SELECT a sentinel column (client_id) to determine presence
+  // reliably. Previously we inferred presence from the flag values,
+  // which made a 0/0 override row indistinguishable from no row.
+  // (Mitigates audit finding #20.)
   const ov = await db.prepare(
-    'SELECT disable_camera, disable_audio FROM client_overrides WHERE client_id = ?'
+    'SELECT client_id, disable_camera, disable_audio FROM client_overrides WHERE client_id = ?'
   ).bind(clientId).first<any>();
-  if (ov && (ov.disable_camera === 1 || ov.disable_audio === 1 || ov.has_override)) {
+  if (ov) {
     return {
       disable_camera: ov.disable_camera ? 1 : 0,
       disable_audio: ov.disable_audio ? 1 : 0,

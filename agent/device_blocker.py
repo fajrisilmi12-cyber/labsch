@@ -12,35 +12,51 @@ import logging
 
 log = logging.getLogger("labsch.device_blocker")
 
+# v0.3.5 — subprocess.CREATE_NO_WINDOW so spawned reg.exe never flashes a
+# console window at the student. Fall back to 0 on non-Windows.
+try:
+    _NO_WINDOW = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+except AttributeError:
+    _NO_WINDOW = 0
+
+# v0.3.5 — single helper so every subprocess call gets explicit timeout +
+# CREATE_NO_WINDOW consistently. (No capture_output/text here — callers
+# either ignore output or use their own.)
+def _run(cmd: list, timeout: int = 10) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd, capture_output=True, timeout=timeout,
+        creationflags=_NO_WINDOW,
+    )
+
+
 CAMERA_POLICY_KEY = r"HKLM\SOFTWARE\Policies\Microsoft\MicrosoftCamera"
 MEDIA_CLASS_GUID = "{4d36e96c-e325-11ce-bfc1-08002be10318}"  # MEDIA (audio endpoints)
 CAMERA_CLASS_GUID = "{6bdd1fc6-810f-11d0-bec7-08002be2092f}"
 
 
 def _reg_add(path: str, name: str, value: str, vtype: str = "REG_DWORD") -> bool:
-    r = subprocess.run(
+    r = _run(
         ["reg", "add", path, "/v", name, "/t", vtype, "/d", value, "/f"],
-        capture_output=True,
     )
     return r.returncode == 0
 
 
 def _reg_delete(path: str, name: str) -> bool:
-    r = subprocess.run(
-        ["reg", "delete", path, "/v", name, "/f"], capture_output=True
+    r = _run(
+        ["reg", "delete", path, "/v", name, "/f"],
     )
     return r.returncode == 0
 
 
 def _reg_delete_tree(path: str) -> bool:
-    r = subprocess.run(
-        ["reg", "delete", path, "/f"], capture_output=True
+    r = _run(
+        ["reg", "delete", path, "/f"],
     )
     return r.returncode == 0
 
 
 def _sc(cmd: list) -> bool:
-    r = subprocess.run(["sc"] + cmd, capture_output=True)
+    r = _run(["sc"] + cmd)
     return r.returncode == 0
 
 
@@ -61,10 +77,10 @@ def _deny_index(index: str, guid_value: str) -> bool:
 def _undeny_index(index: str) -> None:
     # Remove one indexed entry; drop the master switch only if list is empty.
     _reg_delete(DENY_LIST, index)
-    r = subprocess.run(
-        ["reg", "query", DENY_LIST], capture_output=True, text=True,
+    r = _run(
+        ["reg", "query", DENY_LIST],
     )
-    if r.returncode != 0 or ("REG_SZ" not in (r.stdout or "")):
+    if r.returncode != 0 or ("REG_SZ" not in (r.stdout.decode("utf-8", errors="replace") if r.stdout else "")):
         _reg_delete(DENY_BASE, "DenyDeviceClasses")
 
 
@@ -107,12 +123,14 @@ def _mute_all_outputs() -> None:
     # would steal focus — instead just silence via sndvol? Skip invasive mute;
     # the class-deny already blocks render/capture devices on next plug-in.
     # Keep devices muted at the endpoint level for currently-present ones:
-    subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
+    # v0.3.5 — explicit timeout + CREATE_NO_WINDOW so the powershell.exe call
+    # never flashes a console at the student.
+    _run(
+        ["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
          "$o=(New-Object -ComObject MMDeviceEnumerator 2>$null);"
          "try{$d=$o.GetDefaultAudioEndpoint(0,1);"
          "$v=$d.AudioEndpointVolume;$v.MasterVolumeLevelScalar=0.0}catch{}"],
-        capture_output=True,
+        timeout=15,
     )
 
 

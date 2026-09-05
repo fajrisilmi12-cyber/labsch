@@ -21,6 +21,26 @@ from pathlib import Path
 from typing import Optional
 
 
+# v0.3.5 — subprocess.CREATE_NO_WINDOW so spawned reg.exe/schtasks.exe/etc.
+# never flash a console window at the student. Fall back to 0 on non-Windows.
+try:
+    _NO_WINDOW = subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+except AttributeError:
+    _NO_WINDOW = 0
+
+
+def _run(cmd: list, timeout: int = 10, **kw) -> subprocess.CompletedProcess:
+    """v0.3.5 — single helper so every subprocess call gets explicit timeout
+    + CREATE_NO_WINDOW consistently. Returns CompletedProcess for callers
+    that want to inspect stdout/stderr.
+    """
+    kw.setdefault("capture_output", True)
+    kw.setdefault("text", True)
+    kw.setdefault("timeout", timeout)
+    kw.setdefault("creationflags", _NO_WINDOW)
+    return subprocess.run(cmd, **kw)
+
+
 def _is_windows() -> bool:
     return os.name == "nt"
 
@@ -79,9 +99,9 @@ def _install_scheduled_task(agent_path: str, log_fn=print) -> bool:
     task_name = "LabSCHAgentWatchdog"
 
     # Delete existing task first (idempotent)
-    subprocess.run(
+    _run(
         ["schtasks", "/delete", "/tn", task_name, "/f"],
-        capture_output=True, text=True, timeout=10,
+        timeout=10,
     )
 
     # Create new task
@@ -96,7 +116,7 @@ def _install_scheduled_task(agent_path: str, log_fn=print) -> bool:
         "/f",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        result = _run(cmd, timeout=15)
         if result.returncode == 0:
             log_fn(f"[self_protect] scheduled task created: {task_name}")
             return True
@@ -119,7 +139,7 @@ def _install_run_key(agent_path: str, log_fn=print) -> bool:
         "/f",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = _run(cmd, timeout=10)
         if result.returncode == 0:
             log_fn(f"[self_protect] run key added: HKLM\\...\\Run\\LabSCHAgent")
             return True
@@ -137,23 +157,29 @@ def uninstall_self_protection(log_fn=print) -> bool:
     success = 0
 
     # Remove scheduled task
-    result = subprocess.run(
-        ["schtasks", "/delete", "/tn", "LabSCHAgentWatchdog", "/f"],
-        capture_output=True, text=True, timeout=10,
-    )
-    if result.returncode == 0:
-        log_fn("[self_protect] scheduled task removed")
-        success += 1
+    try:
+        result = _run(
+            ["schtasks", "/delete", "/tn", "LabSCHAgentWatchdog", "/f"],
+            timeout=10,
+        )
+        if result.returncode == 0:
+            log_fn("[self_protect] scheduled task removed")
+            success += 1
+    except subprocess.TimeoutExpired:
+        pass
 
     # Remove run key
-    result = subprocess.run(
-        ["reg", "delete", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-         "/v", "LabSCHAgent", "/f"],
-        capture_output=True, text=True, timeout=10,
-    )
-    if result.returncode == 0:
-        log_fn("[self_protect] run key removed")
-        success += 1
+    try:
+        result = _run(
+            ["reg", "delete", r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+             "/v", "LabSCHAgent", "/f"],
+            timeout=10,
+        )
+        if result.returncode == 0:
+            log_fn("[self_protect] run key removed")
+            success += 1
+    except subprocess.TimeoutExpired:
+        pass
 
     return success > 0
 
@@ -173,7 +199,7 @@ def install_filesystem_protection(agent_dir: str, log_fn=print) -> bool:
         "/inheritance:r",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        result = _run(cmd, timeout=15)
         if result.returncode == 0:
             log_fn(f"[self_protect] filesystem restricted: {agent_dir}")
             return True
@@ -201,7 +227,7 @@ def disable_task_manager(log_fn=print) -> bool:
         "/f",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = _run(cmd, timeout=10)
         if result.returncode == 0:
             log_fn("[self_protect] Task Manager disabled")
             return True
@@ -222,7 +248,7 @@ def enable_task_manager(log_fn=print) -> bool:
         "/f",
     ]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = _run(cmd, timeout=10)
         return result.returncode == 0
     except subprocess.TimeoutExpired:
         return False

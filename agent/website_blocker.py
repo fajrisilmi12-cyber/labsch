@@ -40,7 +40,32 @@ def _read_file(path: str) -> str:
 
 
 def _write_file(path: str, content: str):
-    Path(path).write_text(content, encoding="utf-8")
+    """v0.3.5 — atomic hosts file write.
+
+    Hosts file corruption = DNS broken on the PC. We write to a temp file in
+    the SAME directory (so os.replace is atomic on NTFS — same volume) then
+    rename. A reader (DNS client) either sees the old file or the new file,
+    never a half-written one.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except OSError:
+                # Some filesystems / non-Windows dev paths don't support fsync.
+                pass
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def _strip_managed_block(content: str) -> str:
@@ -78,6 +103,10 @@ def backup_once(path: str) -> None:
     backup_path = path + DEFAULT_BACKUP
     if not os.path.exists(backup_path):
         try:
+            # v0.3.5 — use shutil.copy2 (already does read+write safely) but
+            # only as a one-time copy of the *pristine* hosts. We never
+            # overwrite the backup once created, so even a partial copy is
+            # recoverable: the next apply_blocklist re-tries.
             shutil.copy2(path, backup_path)
         except (OSError, PermissionError):
             # May not have write permission to system folder; ignore for first-run

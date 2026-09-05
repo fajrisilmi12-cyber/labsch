@@ -1,55 +1,86 @@
 import type { Context } from 'hono';
 import type { Env } from '../index';
+import { ValidationError, withErrorHandler } from './validation';
 
 // Admin device-control endpoints (camera / audio kill switches)
-// POST /api/admin/device          → set GLOBAL flags
-// POST /api/admin/device/:id      → set PER-PC override
-// GET  /api/admin/device          → get global flags
-// DELETE /api/admin/device/:id    → clear per-PC override (inherit global)
+// POST   /api/admin/device           → set GLOBAL flags
+// POST   /api/admin/device/:id       → set PER-PC override
+// GET    /api/admin/device           → get global flags
+// GET    /api/admin/device/:id       → get per-PC override
+// DELETE /api/admin/device/:id       → FULLY delete per-PC override (inherit global)
 
-export async function setDeviceFlags(c: Context<{ Bindings: Env }>) {
+export const setDeviceFlags = withErrorHandler(async (c: Context<{ Bindings: Env }>) => {
   const db = c.env.DB;
-  const clientId = c.req.param('client_id'); // undefined for global route
-
-  let body: { disable_camera?: boolean; disable_audio?: boolean } = {};
-  try {
-    body = await c.req.json();
-  } catch {
-    // DELETE route may have no body — treat as "clear override"
-  }
-
-  const cam = body.disable_camera === true ? 1 : 0;
-  const aud = body.disable_audio === true ? 1 : 0;
+  const clientId = c.req.param('client_id');
 
   if (clientId === undefined) {
-    // GLOBAL
-    await db.prepare(
-      'UPDATE config SET disable_camera = ?, disable_audio = ?, updated_at = ?, updated_by = ? WHERE id = 1'
-    ).bind(cam, aud, Date.now() / 1000, 'admin:device').run();
-    const row = await db.prepare(
-      'SELECT disable_camera, disable_audio FROM config WHERE id = 1'
-    ).first<any>();
-    return c.json({
-      scope: 'global',
-      disable_camera: !!row.disable_camera,
-      disable_audio: !!row.disable_audio,
-    });
+    // GLOBAL — body required
+    let body: any;
+    try {
+      body = await c.req.json();
+    } catch {
+      throw new ValidationError('invalid JSON body');
+    }
+    if (!body || typeof body !== 'object') {
+      throw new ValidationError('body must be an object');
+    }
+    const cam = body.disable_camera === true ? 1 : 0;
+    const aud = body.disable_audio === true ? 1 : 0;
+
+    // v0.3.5: bump config_version so agents pick up the change.
+    // (Mitigates audit finding #8 — agents were skipping the
+    // heartbeat-returned config because version didn't change.)
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
+      const row = await db.prepare(
+        'SELECT config_version FROM config WHERE id = 1'
+      ).first<any>();
+      const currentVersion = row?.config_version ?? 0;
+      const newVersion = currentVersion + 1;
+      const res = await db.prepare(
+        `UPDATE config
+         SET disable_camera = ?, disable_audio = ?, updated_at = ?, updated_by = ?,
+             config_version = ?
+         WHERE id = 1 AND config_version = ?`
+      ).bind(cam, aud, Date.now() / 1000, 'admin:device', newVersion, currentVersion).run();
+      if (res.meta.changes && res.meta.changes > 0) {
+        return c.json({
+          scope: 'global', config_version: newVersion,
+          disable_camera: !!cam, disable_audio: !!aud,
+        });
+      }
+    }
+    throw new ValidationError('config write contention; please retry', 503);
   }
 
   // Per-PC
   const client = await db.prepare('SELECT client_id FROM clients WHERE client_id = ?')
     .bind(clientId).first();
-  if (!client) return c.json({ detail: 'client not found' }, 404);
+  if (!client) throw new ValidationError('client not found', 404);
 
   if (c.req.method === 'DELETE') {
-    // Reset override columns to 0 (inherit global)
-    await db.prepare(
-      'UPDATE client_overrides SET disable_camera = 0, disable_audio = 0 WHERE client_id = ?'
-    ).bind(clientId).run();
+    // v0.3.5: DELETE fully removes the override row (was only zeroing
+    // the columns, leaving the row present which confused
+    // getEffectiveFlags). Mitigates audit findings #19, #20, #25.
+    await db.prepare('DELETE FROM client_overrides WHERE client_id = ?')
+      .bind(clientId).run();
     return c.json({ scope: 'per-pc', client_id: clientId, cleared: true });
   }
 
-  // Upsert override row if missing, then set flags
+  // POST per-PC: parse body
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    throw new ValidationError('invalid JSON body');
+  }
+  if (!body || typeof body !== 'object') {
+    throw new ValidationError('body must be an object');
+  }
+  const cam = body.disable_camera === true ? 1 : 0;
+  const aud = body.disable_audio === true ? 1 : 0;
+
   await db.prepare(
     `INSERT INTO client_overrides
      (client_id, blocked_websites, allowed_websites, blocked_apps, updated_at, updated_by, disable_camera, disable_audio)
@@ -64,9 +95,9 @@ export async function setDeviceFlags(c: Context<{ Bindings: Env }>) {
     scope: 'per-pc', client_id: clientId,
     disable_camera: !!cam, disable_audio: !!aud,
   });
-}
+});
 
-export async function getDeviceFlags(c: Context<{ Bindings: Env }>) {
+export const getDeviceFlags = withErrorHandler(async (c: Context<{ Bindings: Env }>) => {
   const clientId = c.req.param('client_id');
   if (!clientId) {
     const row = await c.env.DB.prepare(
@@ -78,6 +109,11 @@ export async function getDeviceFlags(c: Context<{ Bindings: Env }>) {
       disable_audio: !!row?.disable_audio,
     });
   }
+  // v0.3.5: presence is determined by row existence, not by flag
+  // values. Previously `has_override` was inferred from
+  // `disable_camera=1 || disable_audio=1`, which meant an override row
+  // with both flags at 0 was indistinguishable from "no override".
+  // (Mitigates audit finding #20.)
   const row = await c.env.DB.prepare(
     'SELECT disable_camera, disable_audio FROM client_overrides WHERE client_id = ?'
   ).bind(clientId).first<any>();
@@ -87,4 +123,4 @@ export async function getDeviceFlags(c: Context<{ Bindings: Env }>) {
     disable_audio: !!row?.disable_audio,
     has_override: !!row,
   });
-}
+});

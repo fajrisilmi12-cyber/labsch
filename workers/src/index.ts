@@ -4,7 +4,7 @@ import { health } from './handlers/health';
 import { heartbeat } from './handlers/heartbeat';
 import { getAgentConfig } from './handlers/config';
 import { postEvent, listEvents } from './handlers/events';
-import { listClients, clientDetail, getOverride, setOverride, clearOverride } from './handlers/clients';
+import { listClients, clientDetail, getOverride, setOverride, clearOverride, renameClient } from './handlers/clients';
 import {
   adminGetConfig, adminSetConfig, blockSite, unblockSite, blockApp, unblockApp,
   allowSite, clearBlockedWebsites, clearBlockedApps, clearAllowedWebsites,
@@ -64,6 +64,9 @@ app.get('/api/admin/profiles/:name', getOneProfile);
 app.delete('/api/admin/profiles/:name', deleteOneProfile);
 app.post('/api/admin/profiles/:name/activate', activateProfile);
 
+// Admin — clients (rename)
+app.put('/api/clients/:client_id/display_name', renameClient);
+
 // Admin — remote commands
 app.post('/api/admin/command/:client_id', setClientCommand);
 app.delete('/api/admin/command/:client_id', clearClientCommand);
@@ -74,10 +77,13 @@ app.get('/api/admin/device', getDeviceFlags);
 app.post('/api/admin/device/:client_id', setDeviceFlags); // per-PC
 app.delete('/api/admin/device/:client_id', setDeviceFlags); // per-PC: clear override
 
-// Admin — token management (rotate / inspect / revoke metadata)
+// Admin — token management
+// POST   /api/admin/token/generate             → mint new token, returns it ONCE
+// GET    /api/admin/token/info                 → list registered fingerprints
+// DELETE /api/admin/token/:fingerprint         → revoke by fingerprint
 app.post('/api/admin/token/generate', generateApiToken);
 app.get('/api/admin/token/info', getTokenInfo);
-app.delete('/api/admin/token', revokeApiToken);
+app.delete('/api/admin/token/:fingerprint', revokeApiToken);
 
 // Cron trigger — mark stale clients as offline
 export default {

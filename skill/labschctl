@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.request
 import urllib.error
@@ -224,22 +225,37 @@ def cmd_health(args):
     print(json.dumps(call("GET", "/api/health") or {}, indent=2))
 
 
-def cmd_rename(args):
-    """Rename a client (set display_name) via direct DB update."""
-    import sqlite3
-    db_path = "/opt/labsch/server/data/labsch.db"
-    conn = sqlite3.connect(db_path)
-    cur = conn.execute(
-        "UPDATE clients SET display_name = ? WHERE client_id = ?",
-        (args.display_name, args.client_id)
-    )
-    conn.commit()
-    if cur.rowcount:
-        print(f"OK: {args.client_id} renamed to '{args.display_name}'")
+def cmd_version(args):
+    """Print labschctl + server version. Useful for diagnosing
+    client/server version mismatches."""
+    CLI_VERSION = "0.3.5"
+    print(f"labschctl: {CLI_VERSION}")
+    h = call("GET", "/api/health")
+    if h:
+        print(f"server:   {h.get('version', '?')}")
     else:
-        print(f"ERROR: client_id '{args.client_id}' not found")
+        print("server:   unreachable")
+
+
+def cmd_rename(args):
+    """Rename a client (set display_name) via API. v0.3.5: previously
+    this wrote directly to SQLite, bypassing the API. Now uses
+    PUT /api/clients/{id}/display_name which is also D1-backed."""
+    if not re.fullmatch(r"[A-Za-z0-9 ._\-]{1,64}", args.display_name):
+        print(f"ERROR: display_name must match [A-Za-z0-9 ._-]{{1,64}}")
+        print(f"  got: {args.display_name!r}")
         sys.exit(1)
-    conn.close()
+    # Resolve display_name/hostname to client_id if needed
+    client_id = args.client_id
+    if not re.fullmatch(r"[A-Za-z0-9._\-]{1,128}", client_id):
+        client_id = resolve_client_id(args.client_id)
+    result = call("PUT", f"/api/clients/{client_id}/display_name",
+                  body={"display_name": args.display_name})
+    if result and result.get("ok"):
+        print(f"OK: {client_id} renamed to '{args.display_name}'")
+    elif result and result.get("detail"):
+        print(f"ERROR: {result['detail']}")
+        sys.exit(1)
 
 
 def cmd_unblock_all(args):
@@ -373,14 +389,32 @@ def cmd_command(args):
         if result:
             print(f"OK: cancelled pending command for {cid}")
         return
-    result = call("POST", f"/api/admin/command/{cid}?command={args.action}")
+    # v0.3.5: handle 'notify' (requires --message) and 'lock'.
+    if args.action == "notify":
+        if not args.message:
+            print("ERROR: 'notify' requires --message / -m", file=sys.stderr)
+            sys.exit(1)
+        # v0.3.5: also validate locally for defense-in-depth — server
+        # already rejects but a clear error here saves a round-trip.
+        for ch in args.message:
+            if ch in ('"', "'", '`', '$', '\\'):
+                print(f"ERROR: message contains forbidden char: {ch!r}", file=sys.stderr)
+                sys.exit(1)
+        if len(args.message) > 200:
+            print("ERROR: message >200 chars", file=sys.stderr)
+            sys.exit(1)
+        msg_enc = urllib.parse.quote(args.message, safe="")
+        url = f"/api/admin/command/{cid}?command=notify&message={msg_enc}"
+    else:
+        url = f"/api/admin/command/{cid}?command={args.action}"
+    result = call("POST", url)
     if result:
         print(f"OK: {result.get('command')} queued for {cid}")
         print("  Agent will execute on next heartbeat (≤30s)")
 
 
 def cmd_command_all(args):
-    """Queue shutdown/restart for all online (or all) clients at once."""
+    """Queue shutdown/restart/lock/notify for all online (or all) clients at once."""
     if args.action == "cancel":
         print("Cancelling pending commands on ALL clients...")
         clients = call("GET", "/api/clients") or []
@@ -395,7 +429,12 @@ def cmd_command_all(args):
         print(f"Done. Cancelled {ok} pending command(s).")
         return
 
-    if args.action not in ("shutdown", "restart"):
+    if args.action == "notify" and not args.message:
+        print("ERROR: 'notify' requires --message / -m", file=sys.stderr)
+        sys.exit(1)
+
+    # v0.3.5: allowed actions include lock and notify now.
+    if args.action not in ("shutdown", "restart", "lock", "notify"):
         print(f"Unknown action: {args.action}", file=sys.stderr)
         sys.exit(2)
 
@@ -439,9 +478,16 @@ def cmd_command_all(args):
             return
 
     ok, fail = 0, 0
+    msg_enc = ""
+    if args.action == "notify":
+        msg_enc = urllib.parse.quote(args.message, safe="")
     for c in targets:
         cid = c.get("client_id")
-        result = call("POST", f"/api/admin/command/{cid}?command={args.action}")
+        if args.action == "notify":
+            url = f"/api/admin/command/{cid}?command=notify&message={msg_enc}"
+        else:
+            url = f"/api/admin/command/{cid}?command={args.action}"
+        result = call("POST", url)
         if result:
             ok += 1
             print(f"  OK: {args.action} queued for {c.get('display_name') or cid}")
@@ -491,28 +537,43 @@ def cmd_token(args):
         if info:
             if info.get("detail"):
                 print(f"ERROR: {info['detail']}")
-            elif info.get("fingerprint"):
+            elif info.get("registered_fingerprints"):
+                # v0.3.5: list all registered fingerprints
+                fps = info["registered_fingerprints"]
+                if not fps:
+                    print("No tokens registered yet (only bootstrap token active).")
+                    return
+                print(f"Bootstrap token active: {info.get('bootstrap_token_active', '?')}")
+                print(f"Registered fingerprints: {len(fps)}")
                 import time
-                ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(info["created_at"]))
-                print(f"Current token fingerprint : {info['fingerprint']}")
-                print(f"Token length              : {info.get('length', '?')}")
-                print(f"Created at                : {ts} UTC")
+                for fp in fps:
+                    ts = time.strftime("%Y-%m-%d %H:%M:%S",
+                                       time.localtime(fp.get("created_at", 0)))
+                    print(f"  {fp.get('fingerprint', '?')[:16]}...  created {ts}")
             else:
                 print("No token has been generated yet.")
                 print("Run: labschctl token generate")
         return
 
     if args.action == "revoke":
+        if not args.fingerprint:
+            print("ERROR: --fingerprint is required. Get it from 'labschctl token info'.")
+            print("Example: labschctl token revoke --fingerprint abc123... --yes")
+            sys.exit(1)
+        # Validate fingerprint shape
+        if not re.fullmatch(r"[0-9a-f]{64}", args.fingerprint.lower()):
+            print("ERROR: fingerprint must be 64 hex chars (full SHA-256)")
+            sys.exit(1)
         if not args.yes:
-            print("This will CLEAR the token metadata in KV.")
-            print("The actual SCHOOL_API_TOKEN secret will still work until you rotate it.")
+            print(f"This will REVOKE the token with fingerprint {args.fingerprint[:16]}...")
+            print("The token will be rejected on next request.")
             confirm = input("Proceed? [y/N] ").strip().lower()
             if confirm != "y":
                 print("Aborted.")
                 return
-        result = call("DELETE", "/api/admin/token")
+        result = call("DELETE", f"/api/admin/token/{args.fingerprint}")
         if result:
-            print(f"OK: {result.get('message')}")
+            print(f"OK: revoked fingerprint {args.fingerprint[:16]}...")
         return
 
 
@@ -552,6 +613,9 @@ def main():
     p_health = sub.add_parser("health", help="server health")
     p_health.set_defaults(func=cmd_health)
 
+    p_version = sub.add_parser("version", help="print labschctl + server version")
+    p_version.set_defaults(func=cmd_version)
+
     p_profile = sub.add_parser("profile", help="manage named profiles (e.g. 'Rules Lab')")
     p_profile.add_argument("action", choices=["list", "save", "show", "activate", "delete"])
     p_profile.add_argument("name", nargs="?", help="profile name")
@@ -565,21 +629,24 @@ def main():
     p_rename.add_argument("display_name", help="new display name (e.g. PC-LAB-01)")
     p_rename.set_defaults(func=cmd_rename)
 
-    p_command = sub.add_parser("command", help="remote shutdown/restart a PC")
-    p_command.add_argument("action", choices=["shutdown", "restart", "cancel"])
+    p_command = sub.add_parser("command", help="remote shutdown/restart/lock/notify a PC")
+    p_command.add_argument("action", choices=["shutdown", "restart", "lock", "notify", "cancel"])
     p_command.add_argument("client_id", help="target client ID (or display name / hostname)")
+    p_command.add_argument("-m", "--message", help="message text (for 'notify' action)")
     p_command.set_defaults(func=cmd_command)
 
     p_command_all = sub.add_parser("command-all", help="queue shutdown/restart to MANY PCs at once")
-    p_command_all.add_argument("action", choices=["shutdown", "restart", "cancel"])
+    p_command_all.add_argument("action", choices=["shutdown", "restart", "lock", "notify", "cancel"])
     p_command_all.add_argument("--online-only", action="store_true",
                                help="only target clients currently online")
     p_command_all.add_argument("--yes", action="store_true",
                                help="skip confirmation prompt")
+    p_command_all.add_argument("-m", "--message", help="message text (for 'notify' action)")
     p_command_all.set_defaults(func=cmd_command_all)
 
     p_token = sub.add_parser("token", help="manage API token (Workers KV-backed)")
     p_token.add_argument("action", choices=["generate", "info", "revoke"])
+    p_token.add_argument("--fingerprint", help="full 64-char SHA-256 fingerprint (for revoke)")
     p_token.add_argument("--yes", action="store_true", help="skip confirmation prompt")
     p_token.set_defaults(func=cmd_token)
 
