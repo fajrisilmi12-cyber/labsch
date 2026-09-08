@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { verifyToken } from './auth';
 import { health } from './handlers/health';
 import { heartbeat } from './handlers/heartbeat';
@@ -25,6 +26,15 @@ export interface Env {
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// CORS — allow Cloudflare Pages + any origin for the web UI
+app.use('/api/*', cors({
+  origin: '*',  // tighten in production if needed
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'X-Agent-Token'],
+  exposeHeaders: ['Content-Length'],
+  maxAge: 86400,
+}));
 
 // Health — open endpoint
 app.get('/api/health', health);

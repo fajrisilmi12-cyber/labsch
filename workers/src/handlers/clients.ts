@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import type { Env } from '../index';
 import {
-  ValidationError, withErrorHandler, safeJsonParse,
+  ValidationError, withErrorHandler, safeJsonParse, isValidDisplayName,
 } from './validation';
 
 const CLIENT_COLUMNS = [

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LabSCH Manager</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖥️</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ═══════════ LOGIN OVERLAY ═══════════ -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">🖥️ LabSCH</div>
+    <p class="login-sub">Lab School Manager</p>
+    <form id="login-form">
+      <label for="login-token">Admin Token</label>
+      <input type="password" id="login-token" placeholder="Paste X-Agent-Token here..." autocomplete="off" required>
+      <label for="login-url">Server URL</label>
+      <input type="url" id="login-url" placeholder="https://labsch-api.fajrisilmi6.workers.dev" autocomplete="off">
+      <button type="submit" class="btn btn-primary btn-full">Masuk</button>
+      <p id="login-error" class="error-text hidden"></p>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════ MAIN APP ═══════════ -->
+<div id="app" class="hidden">
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon">🖥️</span>
+      <span class="logo-text">LabSCH</span>
+    </div>
+    <nav id="nav">
+      <a href="#dashboard" class="nav-item active" data-view="dashboard">
+        <span class="nav-icon">📊</span><span class="nav-label">Dashboard</span>
+      </a>
+      <a href="#clients" class="nav-item" data-view="clients">
+        <span class="nav-icon">💻</span><span class="nav-label">Clients</span>
+      </a>
+      <a href="#config" class="nav-item" data-view="config">
+        <span class="nav-icon">🛡️</span><span class="nav-label">Config</span>
+      </a>
+      <a href="#profiles" class="nav-item" data-view="profiles">
+        <span class="nav-icon">📁</span><span class="nav-label">Profiles</span>
+      </a>
+      <a href="#commands" class="nav-item" data-view="commands">
+        <span class="nav-icon">⚡</span><span class="nav-label">Commands</span>
+      </a>
+      <a href="#device" class="nav-item" data-view="device">
+        <span class="nav-icon">📷</span><span class="nav-label">Device</span>
+      </a>
+      <a href="#events" class="nav-item" data-view="events">
+        <span class="nav-icon">📜</span><span class="nav-label">Events</span>
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btn-logout" class="btn btn-ghost btn-sm" title="Logout">🚪 Logout</button>
+    </div>
+  </aside>
+
+  <!-- Mobile top bar -->
+  <header id="mobile-bar">
+    <button id="mobile-menu-btn" class="btn btn-ghost">☰</button>
+    <span class="mobile-title">LabSCH</span>
+    <button id="mobile-refresh" class="btn btn-ghost" title="Refresh">🔄</button>
+  </header>
+
+  <!-- Content -->
+  <main id="content">
+    <!-- ═══ DASHBOARD ═══ -->
+    <section id="view-dashboard" class="view active">
+      <h1>Dashboard</h1>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card stat-total"><div class="stat-num" id="stat-total">-</div><div class="stat-label">Total Client</div></div>
+        <div class="stat-card stat-online"><div class="stat-num" id="stat-online">-</div><div class="stat-label">Online</div></div>
+        <div class="stat-card stat-offline"><div class="stat-num" id="stat-offline">-</div><div class="stat-label">Offline</div></div>
+        <div class="stat-card stat-pending"><div class="stat-num" id="stat-pending">-</div><div class="stat-label">Pending Cmd</div></div>
+      </div>
+      <div class="grid-2col">
+        <div class="card">
+          <h3>Quick Actions</h3>
+          <div class="quick-actions">
+            <button class="btn btn-danger" onclick="LabSCH.bulkCommand('shutdown')">⏻ Shutdown All</button>
+            <button class="btn btn-warning" onclick="LabSCH.bulkCommand('restart')">🔄 Restart All</button>
+            <button class="btn btn-info" onclick="LabSCH.bulkCommand('lock')">🔒 Lock All</button>
+            <button class="btn btn-success" onclick="LabSCH.bulkCommand('cancel')">✖ Cancel All</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Recent Events</h3>
+          <div id="dash-events" class="event-list compact"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ CLIENTS ═══ -->
+    <section id="view-clients" class="view">
+      <div class="view-header">
+        <h1>Clients</h1>
+        <button class="btn btn-primary" onclick="LabSCH.refreshClients()">🔄 Refresh</button>
+      </div>
+      <div class="table-wrap">
+        <table id="clients-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Name</th>
+              <th>IP</th>
+              <th>Version</th>
+              <th>Last Seen</th>
+              <th>Cmd</th>
+              <th>Test</th>
+            </tr>
+          </thead>
+          <tbody id="clients-body"></tbody>
+        </table>
+      </div>
+      <p id="clients-empty" class="empty-state hidden">Belum ada client terdaftar.</p>
+    </section>
+
+    <!-- ═══ CONFIG ═══ -->
+    <section id="view-config" class="view">
+      <div class="view-header">
+        <h1>Config</h1>
+        <span id="config-version" class="badge">v0</span>
+      </div>
+      <div class="grid-3col">
+        <!-- Blocked Websites -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🚫 Blocked Websites</h3>
+            <button class="btn btn-danger btn-sm" onclick="LabSCH.clearList('blocked-websites')">Clear All</button>
+          </div>
+          <div class="input-group">
+            <input type="text" id="add-blocked-site" placeholder="tiktok.com" class="input-grow">
+            <button class="btn btn-primary" onclick="LabSCH.addItem('blocked-site','add-blocked-site')">+ Add</button>
+          </div>
+          <ul id="blocked-websites-list" class="tag-list"></ul>
+        </div>
+        <!-- Blocked Apps -->
+        <div class="card">
+          <div class="card-header">
+            <h3>🚫 Blocked Apps</h3>
+            <button class="btn btn-danger btn-sm" onclick="LabSCH.clearList('blocked-apps')">Clear All</button>
+          </div>
+          <div class="input-group">
+            <input type="text" id="add-blocked-app" placeholder="RobloxPlayer.exe" class="input-grow">
+            <button class="btn btn-primary" onclick="LabSCH.addItem('blocked-app','add-blocked-app')">+ Add</button>
+          </div>
+          <ul id="blocked-apps-list" class="tag-list"></ul>
+        </div>
+        <!-- Allowed Websites -->
+        <div class="card">
+          <div class="card-header">
+            <h3>✅ Allowed Websites</h3>
+            <button class="btn btn-danger btn-sm" onclick="LabSCH.clearList('allowed-websites')">Clear All</button>
+          </div>
+          <div class="input-group">
+            <input type="text" id="add-allowed-site" placeholder="wikipedia.org" class="input-grow">
+            <button class="btn btn-primary" onclick="LabSCH.addItem('allow-site','add-allowed-site')">+ Add</button>
+          </div>
+          <ul id="allowed-websites-list" class="tag-list"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ PROFILES ═══ -->
+    <section id="view-profiles" class="view">
+      <div class="view-header">
+        <h1>Profiles</h1>
+        <button class="btn btn-primary" onclick="LabSCH.refreshProfiles()">🔄 Refresh</button>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3>Save Current Config as Profile</h3>
+        </div>
+        <div class="input-group">
+          <input type="text" id="new-profile-name" placeholder="Profile name (e.g. Rules Lab)" class="input-grow">
+          <button class="btn btn-success" onclick="LabSCH.saveProfile()">💾 Save</button>
+        </div>
+      </div>
+      <div id="profiles-list" class="profiles-grid"></div>
+      <p id="profiles-empty" class="empty-state hidden">Belum ada profile tersimpan.</p>
+    </section>
+
+    <!-- ═══ COMMANDS ═══ -->
+    <section id="view-commands" class="view">
+      <h1>Remote Commands</h1>
+      <!-- Bulk commands -->
+      <div class="card">
+        <h3>Bulk Commands</h3>
+        <p class="card-desc">Kirim command ke semua PC yang online.</p>
+        <div class="quick-actions">
+          <button class="btn btn-danger" onclick="LabSCH.bulkCommand('shutdown', true)">⏻ Shutdown All (Online)</button>
+          <button class="btn btn-warning" onclick="LabSCH.bulkCommand('restart', true)">🔄 Restart All (Online)</button>
+          <button class="btn btn-info" onclick="LabSCH.bulkCommand('lock', true)">🔒 Lock All (Online)</button>
+        </div>
+        <div class="input-group mt-3">
+          <input type="text" id="bulk-notify-msg" placeholder="Pesan untuk semua PC..." class="input-grow">
+          <button class="btn btn-primary" onclick="LabSCH.bulkNotify()">📢 Notify All</button>
+        </div>
+      </div>
+      <!-- Per-PC commands -->
+      <div class="card mt-3">
+        <h3>Per-PC Command</h3>
+        <div class="input-group">
+          <select id="cmd-client-select" class="input-grow"><option value="">-- Pilih PC --</option></select>
+        </div>
+        <div class="quick-actions mt-3">
+          <button class="btn btn-danger" onclick="LabSCH.perCommand('shutdown')">⏻ Shutdown</button>
+          <button class="btn btn-warning" onclick="LabSCH.perCommand('restart')">🔄 Restart</button>
+          <button class="btn btn-info" onclick="LabSCH.perCommand('lock')">🔒 Lock</button>
+          <button class="btn btn-secondary" onclick="LabSCH.perCommand('cancel')">✖ Cancel</button>
+        </div>
+        <div class="input-group mt-3">
+          <input type="text" id="per-notify-msg" placeholder="Pesan untuk PC ini..." class="input-grow">
+          <button class="btn btn-primary" onclick="LabSCH.perNotify()">📢 Notify</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ DEVICE ═══ -->
+    <section id="view-device" class="view">
+      <h1>Device Control</h1>
+      <!-- Global flags -->
+      <div class="card">
+        <h3>🌐 Global Settings</h3>
+        <p class="card-desc">Berlaku untuk semua PC kecuali yang punya override.</p>
+        <div class="toggle-row">
+          <label class="toggle-label">📷 Camera</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="global-camera">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-status" id="global-camera-status">Enabled</span>
+        </div>
+        <div class="toggle-row">
+          <label class="toggle-label">🔊 Audio</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="global-audio">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-status" id="global-audio-status">Enabled</span>
+        </div>
+        <button class="btn btn-primary mt-3" onclick="LabSCH.saveDeviceFlags()">💾 Apply Global</button>
+      </div>
+      <!-- Per-PC overrides -->
+      <div class="card mt-3">
+        <h3>💻 Per-PC Override</h3>
+        <div class="input-group">
+          <select id="device-client-select" class="input-grow"><option value="">-- Pilih PC --</option></select>
+        </div>
+        <div class="toggle-row mt-3">
+          <label class="toggle-label">📷 Camera</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="per-camera">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <label class="toggle-label">🔊 Audio</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="per-audio">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="quick-actions mt-3">
+          <button class="btn btn-primary" onclick="LabSCH.savePerDevice()">💾 Apply Override</button>
+          <button class="btn btn-secondary" onclick="LabSCH.clearPerDevice()">🗑️ Clear Override</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ EVENTS ═══ -->
+    <section id="view-events" class="view">
+      <div class="view-header">
+        <h1>Events</h1>
+        <div class="header-actions">
+          <select id="events-hours" class="input-sm">
+            <option value="1">1 jam</option>
+            <option value="6" selected>6 jam</option>
+            <option value="24">24 jam</option>
+            <option value="72">3 hari</option>
+          </select>
+          <button class="btn btn-primary" onclick="LabSCH.refreshEvents()">🔄 Refresh</button>
+        </div>
+      </div>
+      <div id="events-list" class="event-list"></div>
+      <p id="events-empty" class="empty-state hidden">Tidak ada events.</p>
+    </section>
+  </main>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- Modal -->
+<div id="modal-overlay" class="hidden">
+  <div id="modal" class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title"></h3>
+      <button class="btn btn-ghost" onclick="LabSCH.closeModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+    <div id="modal-footer"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
