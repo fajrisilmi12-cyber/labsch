@@ -226,7 +226,8 @@ const LabSCH = (() => {
           allowed_websites: (cfg.allowed_websites || []).filter(x => x !== item),
         });
       } else {
-        await api('POST', `/api/admin/un${action}`, { name: item });
+        const removeEndpoint = action === 'blocked-site' ? 'unblock-site' : 'unblock-app';
+        await api('POST', `/api/admin/${removeEndpoint}`, { name: item });
       }
       toast(`Removed: ${item}`, 'success');
       loadConfig();
