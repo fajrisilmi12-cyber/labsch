@@ -1,3 +1,35 @@
+## [0.4.0-test10] - 2026-09-09
+
+### Test release — Web UI, durable downloads, sessions, and reliability
+
+- Added a static Cloudflare Pages admin UI for dashboard, clients, config,
+  profiles, remote commands, download tasks, device controls, and events.
+- Added explicit endpoint mappings for block/unblock actions and fixed the
+  add-site/add-app 404s in the browser UI.
+- UI derives online state from a heartbeat no older than 60 seconds, including
+  Dashboard, Clients, Device, Downloads, and online-only commands.
+- Added download protocol 1: explicit client targets, public HTTPS sources,
+  SHA-256-required autorun, size/TTL limits, durable reporting, cancellation,
+  and separate download/execution states.
+- Added agent download dispatcher, persistent at-most-once journal, user-context
+  Windows launch helper, CLI commands, D1 migration, and Worker tests.
+- Added command confirmation so pending commands clear only after a matching
+  successful agent report; failures remain queued for retry.
+- Added idempotent session refresh with stable device IDs and daily 30-day purge.
+- Fixed list/device override isolation through `has_list_override`.
+- Improved camera/audio PnP handling and retained failed state for retry.
+- Added CORS before Worker authentication for the Pages UI and per-PC device GET.
+- Added Go installer/uninstaller source and test9/test10 persistence checks.
+- Public installer sources use placeholders only; compiled private binaries and
+  credentials are excluded from version control.
+
+### Verification status
+
+- Worker TypeScript compile, Vitest suite, Wrangler dry-run, and static Web UI
+  syntax checks pass on Linux.
+- Windows installer/agent behavior still requires physical acceptance before a
+  fleet-wide stable release. See `docs/DOWNLOAD_TEST_RELEASE.md`.
+
 ## [0.3.5] - 2026-09-05
 
 ### Hardening pass — 50+ MEDIUM/HIGH bugs fixed across all components

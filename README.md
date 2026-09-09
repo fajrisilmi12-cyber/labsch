@@ -4,9 +4,12 @@
 [![Cloudflare Workers](https://img.shields.io/badge/server-Cloudflare%20Workers%20%2B%20D1-orange.svg)]()
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/platform-Windows%2010%2F11%20LTSC-blue.svg)]()
-[![Status: v0.3.2](https://img.shields.io/badge/status-v0.3.2--workers-green.svg)]()
+[![Status: v0.4.0-test10](https://img.shields.io/badge/status-v0.4.0--test10-orange.svg)]()
+[![Web UI](https://img.shields.io/badge/admin-Cloudflare%20Pages-blue.svg)](https://labsch-manager.pages.dev)
 
-Centralized Windows lab management for 20+ PCs — **100% serverless**. Push block/allow rules, app-block policies, and camera/audio controls to lightweight Python agents on each client. The agent runs as a Windows service, can't be killed by students, and identifies each PC by its MAC address (so reinstalls never create duplicate records).
+Centralized Windows lab management for 20+ PCs — **100% serverless**. Push block/allow rules, app-block policies, camera/audio controls, remote commands, and secure download tasks to lightweight Python agents on each client. Manage the fleet through `labschctl` or the Cloudflare Pages Web UI.
+
+> **Current status:** `v0.4.0-test10` is an acceptance/test build, not a fleet-wide stable release. Windows behavior must be physically verified before broad rollout.
 
 > **Live deployment**: Managing SMK + SMP lab PCs in Medan, Indonesia. Server runs on **Cloudflare Workers + D1** (free tier, $0/month) — no homeserver required, no tunnel to maintain, no VM to babysit.
 >
@@ -23,8 +26,42 @@ Centralized Windows lab management for 20+ PCs — **100% serverless**. Push blo
 - 🪟 **Windows 10/11 LTSC** — Tested on MSI Thin 15 (LTSC), should work on Pro/Home/Enterprise.
 - ⚡ **Serverless edge** — Cloudflare Workers global anycast, <50ms latency from Indonesia, 100k requests/day free.
 - 🛠️ **Hermes skill** — Bundled admin CLI integrates with the Hermes Agent skill system. Just `labschctl` from any terminal.
+- 🌐 **Cloudflare Pages Web UI** — Dashboard, clients, config, profiles, commands, downloads, device flags, and events from a responsive browser interface.
+- ⬇️ **Durable download tasks** — Explicit per-client HTTPS downloads with SHA-256 verification, size/TTL limits, separate download/execution status, cancellation, and optional user-context autorun.
+- ✅ **Confirmed remote commands** — Commands remain queued until the matching agent reports success; failed executions are retained for retry.
+- 🧑‍💻 **Session refresh API** — Idempotent session refresh using stable device IDs and daily retention cleanup.
 
+## Web UI
 
+The static admin interface lives in [`web/`](web/) and talks directly to the Workers REST API. Deploy it to Cloudflare Pages:
+
+```bash
+node --check web/app.js
+npx wrangler pages deploy web --project-name labsch-manager --branch main
+```
+
+Open the Pages URL, enter your own Worker URL and admin token, then manage the fleet. The token is never committed or baked into the static files; it is supplied at runtime and stored in that browser's `localStorage`. Use only a trusted admin device and log out afterward.
+
+The UI considers a PC **online only when `last_seen` is no more than 60 seconds old**, rather than trusting a potentially stale database status field.
+
+## Secure download tasks (v0.4.0 test)
+
+```bash
+# Autorun is the default and requires the expected SHA-256.
+labschctl download https://example.org/worksheet.pdf \
+  --name worksheet.pdf \
+  --sha256 <64-lowercase-hex> \
+  --clients PC-LAB-01
+
+# Download without opening the file.
+labschctl download https://example.org/worksheet.pdf \
+  --no-run --clients PC-LAB-01
+
+labschctl downloads
+labschctl download-cancel <task-uuid>
+```
+
+Only explicit clients are supported. There is no implicit broadcast. Sources must use public HTTPS; script/installer autorun, SYSTEM autorun, custom arguments, and group targeting are intentionally unsupported in this test line. See [`docs/DOWNLOAD_TEST_RELEASE.md`](docs/DOWNLOAD_TEST_RELEASE.md).
 
 ## 🔐 API token management (v0.3.2+)
 
@@ -341,11 +378,15 @@ labsch/
 ├── workers/             Cloudflare Workers server (TypeScript, Hono)
 │   ├── src/index.ts         Entry + routing
 │   ├── src/auth.ts          Token middleware
-│   ├── src/handlers/        Endpoint handlers (9 modules)
-│   ├── schema.sql           D1 schema
-│   ├── wrangler.toml        Deploy config (D1 binding, cron)
+│   ├── src/handlers/        API handlers + Vitest coverage
+│   ├── migrations/          Additive D1 migrations
+│   ├── schema.sql           Complete D1 schema
+│   ├── wrangler.toml        Deploy config (D1/KV bindings, crons)
 │   └── package.json
-├── server/              LEGACY: FastAPI + SQLite homeserver version
+├── web/                 Static Cloudflare Pages admin UI
+│   ├── index.html
+│   ├── app.js
+│   └── style.css
 ├── agent/               Windows client
 │   ├── labsch_agent.py          Main loop
 │   ├── config_sync.py           HTTP client (custom UA, CF bot-fight safe)
@@ -377,7 +418,7 @@ labsch/
 - [x] Camera & audio control
 - [x] Reliable auto-start across reboots (4-layer)
 - [ ] Group profiles (apply Rules Lab to group "lab", not test PCs)
-- [ ] Web dashboard (replace CLI with browser UI)
+- [x] Cloudflare Pages Web UI (dashboard, clients, config, profiles, commands, downloads, devices, events)
 - [ ] Real-time events stream (WebSocket/SSE for admin UI)
 - [ ] Per-PC schedule (different rules for class time vs break time)
 - [ ] Native Windows installer (MSI) for Group Policy deployment

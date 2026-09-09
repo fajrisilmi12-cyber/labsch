@@ -70,5 +70,40 @@ CREATE TABLE IF NOT EXISTS client_overrides (
     allowed_websites TEXT NOT NULL DEFAULT '[]',
     blocked_apps TEXT NOT NULL DEFAULT '[]',
     updated_at REAL NOT NULL,
-    updated_by TEXT DEFAULT 'admin'
+    updated_by TEXT DEFAULT 'admin',
+    disable_camera INTEGER NOT NULL DEFAULT 0,
+    disable_audio INTEGER NOT NULL DEFAULT 0,
+    has_list_override INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    mac_address TEXT NOT NULL,
+    student_name TEXT NOT NULL,
+    request_id TEXT,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL,
+    deleted_at REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON sessions(deleted_at);
+
+CREATE TABLE IF NOT EXISTS download_tasks (
+    task_id TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active'
+);
+CREATE TABLE IF NOT EXISTS download_status (
+    task_id TEXT NOT NULL REFERENCES download_tasks(task_id),
+    client_id TEXT NOT NULL,
+    download_state TEXT NOT NULL DEFAULT 'pending',
+    execution_state TEXT NOT NULL DEFAULT 'not_requested',
+    report TEXT,
+    updated_at REAL NOT NULL,
+    PRIMARY KEY (task_id, client_id)
+);
+CREATE INDEX IF NOT EXISTS idx_download_client ON download_status(client_id, download_state);

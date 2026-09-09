@@ -234,6 +234,24 @@ select option { background: var(--bg-secondary); color: var(--text-primary); }
 .profile-meta { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
 .profile-actions { display: flex; gap: 0.4rem; }
 
+/* ═══════ DOWNLOADS / FORMS ═══════ */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1rem 0; }
+.field { display: flex; flex-direction: column; gap: 0.35rem; color: var(--text-secondary); font-size: 0.82rem; }
+.field input, .field select { width: 100%; }
+.span-2 { grid-column: span 2; }
+.download-targets { margin-top: 1rem; }
+.client-check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.45rem; margin-top: 0.6rem; }
+.client-check {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.65rem;
+  background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; font-size: 0.84rem;
+}
+.client-check:hover { border-color: var(--accent); }
+.client-check input { accent-color: var(--accent); }
+.rollup { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.rollup span { padding: 0.12rem 0.35rem; border-radius: 4px; background: var(--bg-tertiary); font-size: 0.75rem; }
+@media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .span-2 { grid-column: span 1; } }
+
 /* ═══════ TOGGLE ═══════ */
 .toggle-row { display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0; }
 .toggle-label { min-width: 100px; font-size: 0.9rem; }

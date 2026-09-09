@@ -13,10 +13,12 @@ import {
 import {
   createOrUpdateProfile, listProfiles, getOneProfile, deleteOneProfile, activateProfile,
 } from './handlers/admin-profiles';
-import { setClientCommand, clearClientCommand } from './handlers/admin-command';
+import { setClientCommand, clearClientCommand, confirmClientCommand } from './handlers/admin-command';
 import { setDeviceFlags, getDeviceFlags } from './handlers/admin-device';
 import { markStaleClients } from './handlers/health';
 import { generateApiToken, getTokenInfo, revokeApiToken } from './handlers/admin-token';
+import { refreshSession, purgeOldSessions } from './handlers/sessions';
+import { createDownloadTask, pendingDownloads, reportDownload, listDownloadTasks, cancelDownloadTask } from './handlers/downloads';
 
 export interface Env {
   DB: D1Database;
@@ -27,9 +29,10 @@ export interface Env {
 
 const app = new Hono<{ Bindings: Env }>();
 
-// CORS — allow Cloudflare Pages + any origin for the web UI
+// Browser admin UI is hosted on Cloudflare Pages. CORS must run before
+// authentication so OPTIONS preflight requests are answered without a token.
 app.use('/api/*', cors({
-  origin: '*',  // tighten in production if needed
+  origin: '*',
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'X-Agent-Token'],
   exposeHeaders: ['Content-Length'],
@@ -80,11 +83,13 @@ app.put('/api/clients/:client_id/display_name', renameClient);
 // Admin — remote commands
 app.post('/api/admin/command/:client_id', setClientCommand);
 app.delete('/api/admin/command/:client_id', clearClientCommand);
+app.post('/api/command/:client_id/confirm', confirmClientCommand);
 
 // Admin — device control (camera/audio)
 app.post('/api/admin/device', setDeviceFlags);            // global: {"disable_camera":true,"disable_audio":true}
 app.get('/api/admin/device', getDeviceFlags);
-app.post('/api/admin/device/:client_id', setDeviceFlags); // per-PC
+app.get('/api/admin/device/:client_id', getDeviceFlags);   // per-PC status
+app.post('/api/admin/device/:client_id', setDeviceFlags);  // per-PC
 app.delete('/api/admin/device/:client_id', setDeviceFlags); // per-PC: clear override
 
 // Admin — token management
@@ -95,10 +100,24 @@ app.post('/api/admin/token/generate', generateApiToken);
 app.get('/api/admin/token/info', getTokenInfo);
 app.delete('/api/admin/token/:fingerprint', revokeApiToken);
 
-// Cron trigger — mark stale clients as offline
+// Sessions
+app.post('/api/sessions/refresh', refreshSession);
+
+// Downloads — separate durable queue, never rides pending_command
+app.post('/api/admin/downloads', createDownloadTask);
+app.get('/api/admin/downloads', listDownloadTasks);
+app.post('/api/admin/downloads/:task_id/cancel', cancelDownloadTask);
+app.get('/api/downloads/pending', pendingDownloads);
+app.post('/api/downloads/report', reportDownload);
+
+// Cron trigger — mark stale clients as offline (every 5 min)
+// Daily 17:00 UTC (00:00 WIB) — purge old sessions, including still-active
+// ones older than 30 days (see purgeOldSessions docstring).
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(markStaleClients(env.DB, 90));
+    const jobs: Promise<unknown>[] = [markStaleClients(env.DB, 90)];
+    if (event.cron === '0 17 * * *') jobs.push(purgeOldSessions(env.DB));
+    ctx.waitUntil(Promise.all(jobs));
   },
 };

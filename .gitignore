@@ -50,12 +50,19 @@ config.ini
 # OS
 Thumbs.db
 
-# Test artifacts
+# Test/build artifacts
 .coverage
 htmlcov/
 node_modules/
 .wrangler/
 *.zip
+*.exe
+__pycache__/
+
+# Private/local release outputs
+agent/installer/setup.exe
+agent/installer/uninstall.exe
+agent/uninstall.exe
 
 
 # DB backups (must never be committed — may contain client PII)

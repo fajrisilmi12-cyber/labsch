@@ -18,7 +18,7 @@
       <label for="login-token">Admin Token</label>
       <input type="password" id="login-token" placeholder="Paste X-Agent-Token here..." autocomplete="off" required>
       <label for="login-url">Server URL</label>
-      <input type="url" id="login-url" placeholder="https://labsch-api.fajrisilmi6.workers.dev" autocomplete="off">
+      <input type="url" id="login-url" placeholder="https://labsch-api.<your-subdomain>.workers.dev" autocomplete="off" required>
       <button type="submit" class="btn btn-primary btn-full">Masuk</button>
       <p id="login-error" class="error-text hidden"></p>
     </form>
@@ -48,6 +48,9 @@
       </a>
       <a href="#commands" class="nav-item" data-view="commands">
         <span class="nav-icon">⚡</span><span class="nav-label">Commands</span>
+      </a>
+      <a href="#downloads" class="nav-item" data-view="downloads">
+        <span class="nav-icon">⬇️</span><span class="nav-label">Downloads</span>
       </a>
       <a href="#device" class="nav-item" data-view="device">
         <span class="nav-icon">📷</span><span class="nav-label">Device</span>
@@ -222,6 +225,46 @@
       </div>
     </section>
 
+    <!-- ═══ DOWNLOADS ═══ -->
+    <section id="view-downloads" class="view">
+      <div class="view-header">
+        <h1>Download Tasks <span class="badge">v0.4.0</span></h1>
+        <button class="btn btn-primary" onclick="LabSCH.refreshDownloads()">🔄 Refresh</button>
+      </div>
+      <div class="card">
+        <h3>⬇️ Kirim File ke PC</h3>
+        <p class="card-desc">Hanya URL HTTPS langsung. Target harus dipilih eksplisit. Autorun memerlukan SHA-256.</p>
+        <div class="form-grid">
+          <label class="field span-2"><span>URL file</span><input type="url" id="download-url" placeholder="https://host/file.pdf"></label>
+          <label class="field"><span>Nama file (opsional)</span><input type="text" id="download-filename" placeholder="worksheet.pdf"></label>
+          <label class="field"><span>Tujuan</span><select id="download-destination"><option value="desktop">Public Desktop</option><option value="documents">Public Documents</option></select></label>
+          <label class="field"><span>Maksimum ukuran (MB)</span><input type="number" id="download-max-size" min="1" max="2048" value="200"></label>
+          <label class="field"><span>Masa berlaku (detik)</span><input type="number" id="download-ttl" min="60" max="604800" value="604800"></label>
+          <label class="field span-2"><span>SHA-256 (wajib bila autorun)</span><input type="text" id="download-sha256" class="mono" maxlength="64" placeholder="64 karakter hex"></label>
+        </div>
+        <div class="toggle-row">
+          <label class="toggle-label">▶️ Autorun</label>
+          <label class="toggle-switch"><input type="checkbox" id="download-autorun" checked><span class="toggle-slider"></span></label>
+          <span class="toggle-status">Jalankan sebagai user aktif setelah hash cocok</span>
+        </div>
+        <div class="download-targets">
+          <strong>Target client</strong>
+          <div id="download-client-list" class="client-check-grid"></div>
+        </div>
+        <button class="btn btn-primary mt-3" onclick="LabSCH.createDownload()">⬇️ Buat Download Task</button>
+      </div>
+      <div class="card mt-3">
+        <h3>Riwayat Download</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>File</th><th>Status</th><th>Target</th><th>Download</th><th>Execution</th><th>Dibuat</th><th>Aksi</th></tr></thead>
+            <tbody id="downloads-body"></tbody>
+          </table>
+        </div>
+        <p id="downloads-empty" class="empty-state hidden">Belum ada download task.</p>
+      </div>
+    </section>
+
     <!-- ═══ DEVICE ═══ -->
     <section id="view-device" class="view">
       <h1>Device Control</h1>
@@ -253,6 +296,7 @@
         <div class="input-group">
           <select id="device-client-select" class="input-grow"><option value="">-- Pilih PC --</option></select>
         </div>
+        <p id="device-client-status" class="card-desc mt-3">Pilih PC untuk melihat status koneksi.</p>
         <div class="toggle-row mt-3">
           <label class="toggle-label">📷 Camera</label>
           <label class="toggle-switch">

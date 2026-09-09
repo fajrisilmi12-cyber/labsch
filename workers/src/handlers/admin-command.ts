@@ -61,6 +61,36 @@ export const setClientCommand = withErrorHandler(async (c: Context<{ Bindings: E
   return c.json({ ok: true, client_id: clientId, command, expires_in_seconds: ttl });
 });
 
+export const confirmClientCommand = withErrorHandler(async (c: Context<{ Bindings: Env }>) => {
+  const clientId = c.req.param('client_id');
+  const body = await c.req.json<any>();
+  const command = body?.command;
+  const result = body?.result;
+  const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 500) : null;
+  if (!VALID_COMMANDS.has(command) || !['success', 'failed'].includes(result)) {
+    throw new ValidationError('command and result (success|failed) are required');
+  }
+  const row = await c.env.DB.prepare('SELECT pending_command FROM clients WHERE client_id = ?')
+    .bind(clientId).first<any>();
+  if (!row) throw new ValidationError('client not found', 404);
+  if (row.pending_command !== command) {
+    return c.json({ ok: false, error: 'command mismatch', pending_command: row.pending_command }, 409);
+  }
+  if (result === 'failed') {
+    await c.env.DB.prepare(
+      `INSERT INTO events (client_id, event_type, target, timestamp, details)
+       VALUES (?, 'command_failed', ?, ?, ?)`
+    ).bind(clientId, command, Date.now() / 1000, reason).run();
+    return c.json({ ok: true, retained: true, command });
+  }
+  const res = await c.env.DB.prepare(
+    `UPDATE clients SET pending_command = NULL, pending_command_message = NULL,
+       pending_command_expires_at = NULL
+     WHERE client_id = ? AND pending_command = ?`
+  ).bind(clientId, command).run();
+  return c.json({ ok: (res.meta.changes ?? 0) === 1, retained: false, command });
+});
+
 export const clearClientCommand = withErrorHandler(async (c: Context<{ Bindings: Env }>) => {
   const clientId = c.req.param('client_id');
   const res = await c.env.DB.prepare(

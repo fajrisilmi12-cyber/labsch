@@ -34,10 +34,19 @@ implement the same approach:
 
 ## The original BAT scripts
 
-We bundle the two reference BAT scripts in the repo at
-`docs/original-bat/` for historical reference. The Python module
-`browser_policy.py` implements the same logic but with a runtime
-configuration pulled from the LabSCH server.
+The two reference BAT scripts live at `docs/original-bat/`:
+
+- **`FULL_ALLOWLIST_SETUP.bat`** — pasang whitelist (Edge/Chrome/Brave),
+  IFEO block Roblox, disable DoH + Incognito. Auto-elevate + restart.
+- **`FULL_ALLOWLIST_UNINSTALL.bat`** — hapus SEMUA kebijakan yang
+  dipasang oleh setup: URLBlocklist, URLAllowlist, DnsOverHttpsMode,
+  InPrivateModeAvailability, IncognitoModeAvailability, IFEO Roblox.
+
+Kedua script pakai subroutine `call` supaya logika browser policy
+hanya ditulis sekali, bukan di-copy-paste per browser.
+
+The Python module `browser_policy.py` implements the same logic but
+with a runtime configuration pulled from the LabSCH server.
 
 ## Author note
 

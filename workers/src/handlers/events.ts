@@ -17,6 +17,7 @@ const VALID_EVENT_TYPES = new Set([
   'self_protect_breach', 'device_id_rewrite', 'auth_failed',
   'override_set', 'override_cleared',
   'notify_rejected', 'ifeo_applied', 'ifeo_cleared', 'config_apply_failed',
+  'device_flags_applied', 'device_flags_failed',
 ]);
 
 function safeParseInt(s: string | null | undefined, defaultVal: number, min: number, max: number): number {

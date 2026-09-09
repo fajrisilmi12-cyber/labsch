@@ -4,10 +4,10 @@ compatibility_date = "2026-08-30"
 account_id = "6915773741f9ea9f8c7a4146bf0ec087"
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *", "0 17 * * *"]
 
 [vars]
-APP_VERSION = "0.3.5-workers"
+APP_VERSION = "0.4.0-test10-workers"
 
 [[d1_databases]]
 binding = "DB"

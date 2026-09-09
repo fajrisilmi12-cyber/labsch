@@ -22,7 +22,7 @@ export async function getAgentConfig(c: Context<{ Bindings: Env }>) {
     const override = await db.prepare(
       'SELECT * FROM client_overrides WHERE client_id = ?'
     ).bind(clientId).first<any>();
-    if (override) {
+    if (override && override.has_list_override) {
       cfg.blocked_apps = JSON.parse(override.blocked_apps);
       cfg.blocked_websites = JSON.parse(override.blocked_websites);
       cfg.allowed_websites = JSON.parse(override.allowed_websites);

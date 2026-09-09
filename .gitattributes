@@ -1,0 +1,5 @@
+# Keep text diffs deterministic across Linux/Windows checkouts.
+* text=auto
+*.bat text eol=lf
+*.cmd text eol=lf
+*.ps1 text eol=lf

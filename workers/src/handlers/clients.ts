@@ -62,7 +62,7 @@ export const getOverride = withErrorHandler(async (c: Context<{ Bindings: Env }>
   const override = await db.prepare(
     'SELECT * FROM client_overrides WHERE client_id = ?'
   ).bind(clientId).first<any>();
-  if (!override) {
+  if (!override || !override.has_list_override) {
     return c.json({
       client_id: clientId, inherits_global: true,
       blocked_apps: [], blocked_websites: [], allowed_websites: [],
@@ -101,14 +101,15 @@ export const setOverride = withErrorHandler(async (c: Context<{ Bindings: Env }>
 
   await db.prepare(
     `INSERT INTO client_overrides
-     (client_id, blocked_websites, allowed_websites, blocked_apps, updated_at, updated_by)
-     VALUES (?, ?, ?, ?, ?, ?)
+     (client_id, blocked_websites, allowed_websites, blocked_apps, updated_at, updated_by, has_list_override)
+     VALUES (?, ?, ?, ?, ?, ?, 1)
      ON CONFLICT(client_id) DO UPDATE SET
        blocked_websites=excluded.blocked_websites,
        allowed_websites=excluded.allowed_websites,
        blocked_apps=excluded.blocked_apps,
        updated_at=excluded.updated_at,
-       updated_by=excluded.updated_by`
+       updated_by=excluded.updated_by,
+       has_list_override=1`
   ).bind(
     clientId,
     JSON.stringify(req.blocked_websites ?? []),
@@ -127,8 +128,12 @@ export const clearOverride = withErrorHandler(async (c: Context<{ Bindings: Env 
     .bind(clientId).first();
   if (!client) throw new ValidationError('client not found', 404);
 
-  const res = await db.prepare('DELETE FROM client_overrides WHERE client_id = ?')
-    .bind(clientId).run();
+  const res = await db.prepare(
+    `UPDATE client_overrides
+     SET has_list_override = 0, blocked_websites = '[]', allowed_websites = '[]', blocked_apps = '[]',
+         updated_at = ?, updated_by = 'admin:clear-list'
+     WHERE client_id = ?`
+  ).bind(Date.now() / 1000, clientId).run();
   return c.json({ ok: (res.meta.changes ?? 0) > 0, inherits_global: true });
 });
 

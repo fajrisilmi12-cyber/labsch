@@ -49,6 +49,12 @@ const LabSCH = (() => {
   function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 
   // ─── Time helpers ───
+  // A PC is considered online only when its last heartbeat is <=60 seconds old.
+  function isClientOnline(client) {
+    const lastSeen = Number(client?.last_seen || 0);
+    return lastSeen > 0 && (Date.now() / 1000 - lastSeen) <= 60;
+  }
+
   function timeAgo(ts) {
     if (!ts) return '-';
     const now = Date.now() / 1000;
@@ -74,7 +80,7 @@ const LabSCH = (() => {
       clients = [];
     }
     const total = clients.length;
-    const online = clients.filter(c => c.status === 'online').length;
+    const online = clients.filter(isClientOnline).length;
     const offline = total - online;
     const pending = clients.filter(c => c.pending_command).length;
 
@@ -117,9 +123,11 @@ const LabSCH = (() => {
       return;
     }
     empty.classList.add('hidden');
-    body.innerHTML = clients.map(c => `
+    body.innerHTML = clients.map(c => {
+      const online = isClientOnline(c);
+      return `
       <tr>
-        <td><span class="status-dot ${c.status === 'online' ? 'online' : 'offline'}"></span>${c.status || 'unknown'}</td>
+        <td><span class="status-dot ${online ? 'online' : 'offline'}"></span>${online ? 'online' : 'offline'}</td>
         <td><span class="name-cell" onclick="LabSCH.showClientDetail('${c.client_id}')">${esc(c.display_name || c.client_id)}</span></td>
         <td class="mono">${esc(c.ip || '-')}</td>
         <td class="mono">${esc(c.version || '-')}</td>
@@ -127,7 +135,8 @@ const LabSCH = (() => {
         <td>${c.pending_command ? `<span class="text-warning">${c.pending_command}</span>` : '<span class="text-muted">-</span>'}</td>
         <td>${c.is_test ? '<span class="text-warning">✓</span>' : ''}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
   }
 
   async function showClientDetail(clientId) {
@@ -144,9 +153,10 @@ const LabSCH = (() => {
         `;
       }
     } catch {}
+    const online = isClientOnline(c);
     const html = `
       <div style="display:grid;gap:0.5rem;font-size:0.9rem">
-        <p><strong>Status:</strong> <span class="status-dot ${c.status === 'online' ? 'online' : 'offline'}"></span>${c.status}</p>
+        <p><strong>Status:</strong> <span class="status-dot ${online ? 'online' : 'offline'}"></span>${online ? 'online' : 'offline'}</p>
         <p><strong>Device ID:</strong> <span class="mono">${esc(c.device_id || '-')}</span></p>
         <p><strong>Hostname:</strong> ${esc(c.hostname || '-')}</p>
         <p><strong>IP:</strong> <span class="mono">${esc(c.ip || '-')}</span></p>
@@ -208,8 +218,15 @@ const LabSCH = (() => {
     const input = document.getElementById(inputId);
     const val = input.value.trim();
     if (!val) return;
+    const addEndpoints = {
+      'blocked-site': 'block-site',
+      'blocked-app': 'block-app',
+      'allow-site': 'allow-site',
+    };
+    const endpoint = addEndpoints[action];
+    if (!endpoint) { toast('Aksi config tidak dikenal.', 'error'); return; }
     try {
-      await api('POST', `/api/admin/${action}`, { name: val });
+      await api('POST', `/api/admin/${endpoint}`, { name: val });
       input.value = '';
       toast(`Added: ${val}`, 'success');
       loadConfig();
@@ -323,7 +340,10 @@ const LabSCH = (() => {
       if (!sel) return;
       const val = sel.value;
       sel.innerHTML = '<option value="">-- Pilih PC --</option>' +
-        clients.map(c => `<option value="${c.client_id}">${esc(c.display_name || c.client_id)}${c.is_test ? ' [test]' : ''}</option>`).join('');
+        clients.map(c => {
+          const status = id === 'device-client-select' ? ` — ${isClientOnline(c) ? 'Online' : 'Offline'}` : '';
+          return `<option value="${c.client_id}">${esc(c.display_name || c.client_id)}${c.is_test ? ' [test]' : ''}${status}</option>`;
+        }).join('');
       sel.value = val;
     });
   }
@@ -353,7 +373,7 @@ const LabSCH = (() => {
   }
 
   async function bulkCommand(cmd, onlineOnly = false) {
-    const online = clients.filter(c => c.status === 'online');
+    const online = clients.filter(isClientOnline);
     const targets = onlineOnly ? online : clients;
     if (!targets.length) { toast('Tidak ada target!', 'error'); return; }
     const label = onlineOnly ? 'online' : 'semua';
@@ -371,7 +391,7 @@ const LabSCH = (() => {
   async function bulkNotify() {
     const msg = document.getElementById('bulk-notify-msg').value.trim();
     if (!msg) { toast('Masukkan pesan!', 'error'); return; }
-    const online = clients.filter(c => c.status === 'online');
+    const online = clients.filter(isClientOnline);
     if (!online.length) { toast('Tidak ada PC online!', 'error'); return; }
     if (!confirm(`Kirim notify ke ${online.length} PC online?`)) return;
     let ok = 0;
@@ -388,11 +408,30 @@ const LabSCH = (() => {
   // ─── Device ───
   async function loadDevice() {
     try {
-      deviceFlags = await api('GET', '/api/admin/device');
+      [deviceFlags, clients] = await Promise.all([
+        api('GET', '/api/admin/device'),
+        api('GET', '/api/clients'),
+      ]);
     } catch { deviceFlags = { disable_camera: false, disable_audio: false }; }
     document.getElementById('global-camera').checked = deviceFlags.disable_camera;
     document.getElementById('global-audio').checked = deviceFlags.disable_audio;
     updateDeviceStatus();
+    populateClientSelectors();
+    updateSelectedDeviceStatus();
+  }
+
+  function updateSelectedDeviceStatus() {
+    const clientId = document.getElementById('device-client-select').value;
+    const el = document.getElementById('device-client-status');
+    const client = clients.find(c => c.client_id === clientId);
+    if (!client) {
+      el.textContent = 'Pilih PC untuk melihat status koneksi.';
+      el.className = 'card-desc mt-3';
+      return;
+    }
+    const online = isClientOnline(client);
+    el.textContent = `${online ? '🟢 Online' : '🔴 Offline'} — terakhir terlihat ${timeAgo(client.last_seen)}`;
+    el.className = `card-desc mt-3 ${online ? 'text-success' : 'text-danger'}`;
   }
 
   function updateDeviceStatus() {
@@ -411,6 +450,23 @@ const LabSCH = (() => {
       updateDeviceStatus();
       toast('Device flags updated!', 'success');
     } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  async function loadPerDevice() {
+    const clientId = document.getElementById('device-client-select').value;
+    const camera = document.getElementById('per-camera');
+    const audio = document.getElementById('per-audio');
+    if (!clientId) {
+      camera.checked = false;
+      audio.checked = false;
+      return;
+    }
+    try {
+      const flags = await api('GET', `/api/admin/device/${clientId}`);
+      camera.checked = flags.disable_camera === true;
+      audio.checked = flags.disable_audio === true;
+      toast(flags.has_override ? 'Override PC dimuat' : 'PC mengikuti pengaturan global', 'info');
+    } catch (e) { toast('Gagal memuat override: ' + e.message, 'error'); }
   }
 
   async function savePerDevice() {
@@ -488,6 +544,100 @@ const LabSCH = (() => {
     return 'info';
   }
 
+  // ═══════ DOWNLOADS (v0.4.0) ═══════
+
+  function renderDownloadTargets() {
+    const box = document.getElementById('download-client-list');
+    if (!box) return;
+    if (!clients.length) {
+      box.innerHTML = '<span class="text-muted">Tidak ada client terdaftar.</span>';
+      return;
+    }
+    box.innerHTML = clients.map(c => `
+      <label class="client-check">
+        <input type="checkbox" name="download-client" value="${esc(c.client_id)}">
+        <span class="status-dot ${isClientOnline(c) ? 'online' : 'offline'}"></span>
+        <span>${esc(c.display_name || c.client_id)}</span>
+      </label>
+    `).join('');
+  }
+
+  async function refreshDownloads() {
+    try {
+      if (!clients.length) clients = await api('GET', '/api/clients');
+      renderDownloadTargets();
+      const result = await api('GET', '/api/admin/downloads');
+      renderDownloads(result?.tasks || []);
+    } catch (e) { toast('Gagal load downloads: ' + e.message, 'error'); }
+  }
+
+  function renderDownloads(tasks) {
+    const body = document.getElementById('downloads-body');
+    const empty = document.getElementById('downloads-empty');
+    if (!tasks.length) {
+      body.innerHTML = '';
+      empty.classList.remove('hidden');
+      return;
+    }
+    empty.classList.add('hidden');
+    body.innerHTML = tasks.map(t => {
+      const r = t.rollup || {};
+      const dl = ['pending','downloading','done','failed','skipped']
+        .filter(k => r[k]).map(k => `<span>${k}: ${r[k]}</span>`).join('') || '<span>-</span>';
+      const executions = {};
+      for (const c of (t.clients || [])) executions[c.execution_state || 'not_requested'] = (executions[c.execution_state || 'not_requested'] || 0) + 1;
+      const ex = Object.entries(executions).map(([k,v]) => `<span>${esc(k)}: ${v}</span>`).join('') || '<span>not_requested</span>';
+      return `<tr>
+        <td><strong>${esc(t.filename)}</strong><br><span class="mono text-muted">${esc(t.task_id)}</span></td>
+        <td>${esc(t.status)}${t.autorun ? '<br><span class="text-warning">autorun</span>' : ''}</td>
+        <td>${t.targets?.clients || 0}</td>
+        <td><div class="rollup">${dl}</div></td>
+        <td><div class="rollup">${ex}</div></td>
+        <td>${timeAgo(t.created_at)}</td>
+        <td>${t.status === 'active' ? `<button class="btn btn-danger btn-sm" onclick="LabSCH.cancelDownload('${esc(t.task_id)}')">Cancel</button>` : '-'}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function createDownload() {
+    const url = document.getElementById('download-url').value.trim();
+    const filename = document.getElementById('download-filename').value.trim();
+    const destination = document.getElementById('download-destination').value;
+    const maxSize = Number(document.getElementById('download-max-size').value);
+    const ttl = Number(document.getElementById('download-ttl').value);
+    const sha256 = document.getElementById('download-sha256').value.trim().toLowerCase();
+    const autorun = document.getElementById('download-autorun').checked;
+    const selected = [...document.querySelectorAll('input[name="download-client"]:checked')].map(x => x.value);
+    if (!/^https:\/\//i.test(url)) return toast('URL wajib HTTPS.', 'error');
+    if (!selected.length) return toast('Pilih minimal satu target client.', 'error');
+    if (autorun && !/^[a-f0-9]{64}$/.test(sha256)) return toast('Autorun memerlukan SHA-256 64 karakter hex.', 'error');
+    if (sha256 && !/^[a-f0-9]{64}$/.test(sha256)) return toast('Format SHA-256 tidak valid.', 'error');
+    if (!Number.isInteger(maxSize) || maxSize < 1 || maxSize > 2048) return toast('Ukuran harus 1–2048 MB.', 'error');
+    if (!Number.isInteger(ttl) || ttl < 60 || ttl > 604800) return toast('TTL harus 60–604800 detik.', 'error');
+    const mode = autorun ? 'DOWNLOAD dan JALANKAN' : 'DOWNLOAD SAJA';
+    if (!confirm(`${mode} ${filename || url} ke ${selected.length} PC?`)) return;
+    const payload = { url, destination, max_size_mb: maxSize, ttl_seconds: ttl, autorun, run_as: 'user', clients: selected, groups: [] };
+    if (filename) payload.filename = filename;
+    if (sha256) payload.sha256 = sha256;
+    try {
+      const out = await api('POST', '/api/admin/downloads', payload);
+      toast(`Task dibuat: ${out.task_id}`, 'success');
+      document.getElementById('download-url').value = '';
+      document.getElementById('download-filename').value = '';
+      document.getElementById('download-sha256').value = '';
+      await refreshDownloads();
+    } catch (e) { toast('Gagal membuat task: ' + e.message, 'error'); }
+  }
+
+  async function cancelDownload(taskId) {
+    if (!confirm('Batalkan task ini? Transfer yang sudah berjalan mungkin tetap selesai.')) return;
+    try {
+      await api('POST', `/api/admin/downloads/${taskId}/cancel`);
+      toast('Download task dibatalkan.', 'success');
+      await refreshDownloads();
+    } catch (e) { toast('Gagal cancel: ' + e.message, 'error'); }
+  }
+
   // ═══════ ROUTING ═══════
 
   function switchView(view) {
@@ -504,6 +654,7 @@ const LabSCH = (() => {
       case 'config': loadConfig(); break;
       case 'profiles': loadProfiles(); break;
       case 'commands': if (!clients.length) loadDashboard(); break;
+      case 'downloads': refreshDownloads(); break;
       case 'device': loadDevice(); if (!clients.length) loadDashboard(); break;
       case 'events': refreshEvents(); break;
     }
@@ -521,7 +672,7 @@ const LabSCH = (() => {
   function init() {
     // Check saved token
     token = localStorage.getItem('labsch_token') || '';
-    baseUrl = localStorage.getItem('labsch_url') || 'https://labsch-api.fajrisilmi6.workers.dev';
+    baseUrl = localStorage.getItem('labsch_url') || '';
 
     if (token) {
       document.getElementById('login-overlay').classList.add('hidden');
@@ -533,8 +684,8 @@ const LabSCH = (() => {
     document.getElementById('login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const t = document.getElementById('login-token').value.trim();
-      const u = document.getElementById('login-url').value.trim() || 'https://labsch-api.fajrisilmi6.workers.dev';
-      if (!t) return;
+      const u = document.getElementById('login-url').value.trim();
+      if (!t || !u) return;
       token = t;
       baseUrl = u;
       // Validate the token against an authenticated endpoint.
@@ -585,6 +736,12 @@ const LabSCH = (() => {
       switchView(currentView);
     });
 
+    // Load saved camera/audio override and heartbeat-derived status when selecting a PC.
+    document.getElementById('device-client-select').addEventListener('change', () => {
+      updateSelectedDeviceStatus();
+      loadPerDevice();
+    });
+
     // Enter key on config inputs
     ['add-blocked-site', 'add-blocked-app', 'add-allowed-site'].forEach(id => {
       document.getElementById(id)?.addEventListener('keydown', (e) => {
@@ -610,7 +767,8 @@ const LabSCH = (() => {
     addItem, removeItem, clearList,
     saveProfile, activateProfile, deleteProfile, refreshProfiles: loadProfiles,
     perCommand, perNotify, bulkCommand, bulkNotify,
-    saveDeviceFlags, savePerDevice, clearPerDevice,
+    refreshDownloads, createDownload, cancelDownload,
+    saveDeviceFlags, loadPerDevice, savePerDevice, clearPerDevice,
     refreshEvents, closeModal,
   };
 })();

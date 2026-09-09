@@ -68,11 +68,20 @@ export const heartbeat = withErrorHandler(async (c: Context<{ Bindings: Env }>) 
   // De-dup by device_id (MAC-stable ID). If a row with the same device_id
   // already exists under a different client_id, use the canonical one.
   // (v0.3.5: silent rewrite is documented; we add an audit log for it.)
-  let existingClientId = req.client_id;
+  const placeholderClientIds = new Set(['client_id', 'client-id', 'changeme', 'unknown']);
+  // Broken installer payloads may persist the literal placeholder "client_id".
+  // Map those heartbeats to the hardware-stable device_id before any DB write,
+  // so concurrently used PCs never overwrite one shared row.
+  let existingClientId = placeholderClientIds.has(req.client_id.toLowerCase()) && req.device_id
+    ? req.device_id
+    : req.client_id;
   if (req.device_id) {
     const row = await db.prepare(
-      'SELECT client_id FROM clients WHERE device_id = ? AND client_id != ? LIMIT 1'
-    ).bind(req.device_id, req.client_id).first<{ client_id: string }>();
+      `SELECT client_id FROM clients
+       WHERE device_id = ? AND client_id != ?
+         AND lower(client_id) NOT IN ('client_id','client-id','changeme','unknown')
+       LIMIT 1`
+    ).bind(req.device_id, existingClientId).first<{ client_id: string }>();
     if (row && row.client_id !== req.client_id) {
       // Audit log the rewrite so operators can spot impersonation
       // attempts (e.g. a student replacing the device_id of someone else).
@@ -131,44 +140,24 @@ export const heartbeat = withErrorHandler(async (c: Context<{ Bindings: Env }>) 
   const override = await db.prepare(
     'SELECT * FROM client_overrides WHERE client_id = ?'
   ).bind(existingClientId).first<any>();
-  if (override) {
+  if (override && override.has_list_override) {
     cfg.blocked_apps = safeJsonParse<string[]>(override.blocked_apps, []);
     cfg.blocked_websites = safeJsonParse<string[]>(override.blocked_websites, []);
     cfg.allowed_websites = safeJsonParse<string[]>(override.allowed_websites, []);
   }
 
-  // Race-safe pending_command pickup: read+update in a single statement
-  // so two concurrent heartbeats can't both claim the same command. The
-  // RETURNING clause (D1 supports it) gives us the value just cleared.
+  // Delivery is non-destructive. Only an explicit matching success
+  // confirmation may clear the command; failures remain queued for retry.
+  const cmdRow = await db.prepare(
+    `SELECT pending_command, pending_command_message, pending_command_expires_at
+     FROM clients WHERE client_id = ?`
+  ).bind(existingClientId).first<any>();
   let pendingCommand: string | null = null;
   let pendingMessage: string | null = null;
-  let pendingExpiresAt: number | null = null;
-  try {
-    const claim = await db.prepare(
-      `UPDATE clients
-       SET pending_command = NULL, pending_command_message = NULL
-       WHERE client_id = ? AND pending_command IS NOT NULL
-         AND (pending_command_expires_at IS NULL OR pending_command_expires_at > ?)
-       RETURNING pending_command, pending_command_message, pending_command_expires_at`
-    ).bind(existingClientId, now).first<any>();
-    if (claim) {
-      pendingCommand = claim.pending_command;
-      pendingMessage = claim.pending_command_message ?? null;
-      pendingExpiresAt = claim.pending_command_expires_at ?? null;
-    }
-  } catch {
-    // Column pending_command_expires_at may not exist yet (pre-migration).
-    // Fall back to legacy read+clear.
-    const cmdRow = await db.prepare(
-      'SELECT pending_command, pending_command_message FROM clients WHERE client_id = ?'
-    ).bind(existingClientId).first<any>();
-    if (cmdRow?.pending_command) {
-      pendingCommand = cmdRow.pending_command;
-      pendingMessage = cmdRow.pending_command_message ?? null;
-      await db.prepare(
-        'UPDATE clients SET pending_command = NULL, pending_command_message = NULL WHERE client_id = ?'
-      ).bind(existingClientId).run();
-    }
+  if (cmdRow?.pending_command &&
+      (cmdRow.pending_command_expires_at == null || cmdRow.pending_command_expires_at > now)) {
+    pendingCommand = cmdRow.pending_command;
+    pendingMessage = cmdRow.pending_command_message ?? null;
   }
 
   // Device flags: per-PC override wins over global. Use override row we

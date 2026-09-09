@@ -1,10 +1,16 @@
-import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
+import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config';
 
+// Entirely local; deliberately do not load production bindings or secrets.
 export default defineWorkersConfig({
   test: {
     poolOptions: {
       workers: {
-        wrangler: { configPath: "./wrangler.toml" },
+        miniflare: {
+          compatibilityDate: '2025-09-06',
+          compatibilityFlags: ['nodejs_compat'],
+          d1Databases: ['DB'],
+          bindings: { SCHOOL_API_TOKEN: 'local-test-only', APP_VERSION: 'test' },
+        },
       },
     },
   },

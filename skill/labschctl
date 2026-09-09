@@ -382,6 +382,90 @@ def resolve_client_id(name: str) -> str:
     return name  # assume raw client_id
 
 
+def _parse_download_dest(raw):
+    """Map CLI --dest to canonical destination for the server."""
+    if raw in (None, "", "desktop", "documents"):
+        return raw or "desktop"
+    raise SystemExit("ERROR: --dest must be 'desktop' or 'documents' (v1 limit)")
+
+
+def cmd_download(args):
+    """Queue a file download task for explicitly targeted clients."""
+    url = args.url
+    filename = args.name
+    dest = _parse_download_dest(args.dest)
+    autorun = bool(args.autorun)
+    sha256 = args.sha256
+    # Validate inputs before any network call.
+    if args.group:
+        raise SystemExit("ERROR: groups unsupported in this test release; use --clients")
+    if not (args.clients or args.group):
+        print("ERROR: no explicit target; specify --clients or --group (implicit broadcast not allowed)",
+              file=sys.stderr)
+        sys.exit(1)
+    if autorun and not sha256:
+        print("ERROR: --sha256 is required when autorun is enabled (safety gate)", file=sys.stderr)
+        sys.exit(1)
+    clients = [resolve_client_id(c) for c in (args.clients or [])]
+    groups = [args.group] if args.group else []
+    body = {"url": url, "autorun": autorun, "clients": clients, "groups": groups,
+            "sha256": (sha256.lower() if sha256 else None)}
+    if filename:
+        body["filename"] = filename
+    if dest != "desktop":
+        body["destination"] = dest
+    if sha256:
+        body["sha256"] = sha256.lower()
+    if getattr(args, "max_size_mb", None):
+        body["max_size_mb"] = args.max_size_mb
+    if getattr(args, "ttl_seconds", None):
+        body["ttl_seconds"] = args.ttl_seconds
+    if getattr(args, "run_as", None) and args.run_as != "user":
+        body["run_as"] = args.run_as
+    result = call("POST", "/api/admin/downloads", body)
+    if result:
+        tid = result.get("task_id", "?")
+        missing = result.get("missing_clients", [])
+        print(f"OK: download task queued {tid}")
+        print(f"  Protocol: {result.get('protocol', '?')}")
+        if missing:
+            print(f"  Missing clients: {', '.join(missing)}")
+        print("  Upgraded agent polls every 30s; jitter/backlog may delay start")
+    return result
+
+
+def cmd_downloads(args):
+    """List download tasks with per-client rollup."""
+    result = call("GET", "/api/admin/downloads")
+    if not result:
+        return
+    tasks = result.get("tasks", [])
+    if not tasks:
+        print("No download tasks.")
+        return
+    print(f"{'TASK_ID':36} {'STATUS':<8} {'AUTO':<4} {'FILENAME':<32} {'ROLLUP'}")
+    print("-" * 110)
+    for t in tasks:
+        tid = t.get("task_id", "?")
+        status = t.get("status", "?")
+        autorun = "Y" if t.get("autorun") else "N"
+        fn = t.get("filename", "?")
+        rollup = t.get("rollup", {})
+        roll_str = " ".join(f"{k}:{v}" for k, v in rollup.items() if v) if rollup else "-"
+        print(f"{tid} {status:<8} {autorun:<4} {fn:<32} {roll_str}")
+        for row in t.get("clients", []):
+            print(f"  {row['client_id']}: download={row['download_state']} execution={row['execution_state']}")
+    return result
+
+
+def cmd_download_cancel(args):
+    """Cancel a download task (agents will stop receiving it)."""
+    result = call("POST", f"/api/admin/downloads/{args.task_id}/cancel")
+    if result:
+        print(f"OK: download task {args.task_id} cancelled")
+    return result
+
+
 def cmd_command(args):
     cid = resolve_client_id(args.client_id)
     if args.action == "cancel":
@@ -649,6 +733,32 @@ def main():
     p_token.add_argument("--fingerprint", help="full 64-char SHA-256 fingerprint (for revoke)")
     p_token.add_argument("--yes", action="store_true", help="skip confirmation prompt")
     p_token.set_defaults(func=cmd_token)
+
+    # --- download feature (v0.4.0) ---
+    p_dl = sub.add_parser("download", help="queue a file download (+optional autorun) for clients")
+    p_dl.add_argument("url", help="source URL (direct https, or Google Drive / OneDrive share link)")
+    p_dl.add_argument("--name", help="target filename (default: derived from URL; sanitized)")
+    p_dl.add_argument("--dest", default="desktop", help="desktop|documents (default desktop)")
+    p_dl.add_argument("--no-autorun", "--no-run", dest="autorun", action="store_false", default=True,
+                      help="download only, do not run (autorun is default)")
+    p_dl.add_argument("--sha256", help="expected SHA-256 (64 hex); REQUIRED when autorun enabled")
+    p_dl.add_argument("--clients", nargs="+", metavar="CLIENT",
+                     help="one or more client IDs / display names / hostnames")
+    p_dl.add_argument("--group", help="group name to target (instead of --clients)")
+    p_dl.add_argument("--max-size-mb", type=int, dest="max_size_mb", default=None,
+                      help="per-file size cap in MB (server default 200 MB)")
+    p_dl.add_argument("--ttl-seconds", type=int, dest="ttl_seconds", default=None,
+                      help="task expiry (server default 7 days)")
+    p_dl.add_argument("--run-as", choices=["user"], default="user",
+                      help="execution context (v0.4.0: 'user' only; system context deliberately unsupported)")
+    p_dl.set_defaults(func=cmd_download)
+
+    p_dls = sub.add_parser("downloads", help="list download tasks + per-client rollup")
+    p_dls.set_defaults(func=cmd_downloads)
+
+    p_dlc = sub.add_parser("download-cancel", help="cancel a download task")
+    p_dlc.add_argument("task_id", help="task UUID from 'downloads' listing")
+    p_dlc.set_defaults(func=cmd_download_cancel)
 
     args = parser.parse_args()
     args.func(args)
