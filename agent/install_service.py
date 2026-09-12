@@ -47,10 +47,22 @@ class LabSCHAgentService(win32serviceutil.ServiceFramework):
     def main(self):
         # Import here to avoid path issues when running as service
         import os
+        import threading
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from labsch_agent import run_loop, load_agent_config
         cfg = load_agent_config()
-        run_loop(cfg)
+        # Run the agent loop in a worker thread so SvcStop can wake us
+        # via hWaitStop within ~1s (well under the 5s requirement).
+        t = threading.Thread(
+            target=run_loop,
+            args=(cfg, lambda: not self.running),
+            daemon=True,
+        )
+        t.start()
+        while self.running:
+            # Wait up to 1s for the stop event, then re-check self.running.
+            win32event.WaitForSingleObject(self.hWaitStop, 1000)
+        t.join(timeout=5)
 
 
 if __name__ == "__main__":

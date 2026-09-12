@@ -8,9 +8,11 @@ On Windows: uses 'getmac' command (built-in)
 On Linux/Mac: uses /sys/class/net or ifconfig
 """
 import hashlib
+import os
 import platform
 import re
 import subprocess
+import uuid
 from typing import Optional
 
 
@@ -80,9 +82,9 @@ def _get_mac_unix() -> Optional[str]:
         mac_int = uuid.getnode()
         if (mac_int >> 40) & 1:  # Check multicast bit (random MAC)
             return None
-        mac = ":".join(f"{(mac_int >> i) & 0xFF:02X}" for i in range(0, 48, 8))
+        mac = ":".join(f"{(mac_int >> i) & 0xFF:02X}" for i in range(40, -8, -8))
         return mac
-    except (ValueError, OSError):
+    except (ValueError, OSError, NameError):
         return None
 
 
