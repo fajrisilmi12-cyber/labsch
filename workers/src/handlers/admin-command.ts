@@ -52,6 +52,16 @@ export const setClientCommand = withErrorHandler(async (c: Context<{ Bindings: E
   const ttl = ttlOverride ?? COMMAND_TTL_SECONDS;
   const expiresAt = Date.now() / 1000 + ttl;
 
+  // Reject overwrite while a previous command is still pending & unexpired
+  const existing = await db.prepare(
+    'SELECT pending_command, pending_command_expires_at FROM clients WHERE client_id = ?'
+  ).bind(clientId).first<any>();
+  const nowSec = Date.now() / 1000;
+  if (existing?.pending_command &&
+      (existing.pending_command_expires_at == null || existing.pending_command_expires_at > nowSec)) {
+    throw new ValidationError('previous command still pending, cancel first', 409);
+  }
+
   await db.prepare(
     `UPDATE clients
      SET pending_command = ?, pending_command_message = ?, pending_command_expires_at = ?
@@ -70,9 +80,20 @@ export const confirmClientCommand = withErrorHandler(async (c: Context<{ Binding
   if (!VALID_COMMANDS.has(command) || !['success', 'failed'].includes(result)) {
     throw new ValidationError('command and result (success|failed) are required');
   }
-  const row = await c.env.DB.prepare('SELECT pending_command FROM clients WHERE client_id = ?')
+  const row = await c.env.DB.prepare('SELECT pending_command, device_id FROM clients WHERE client_id = ?')
     .bind(clientId).first<any>();
   if (!row) throw new ValidationError('client not found', 404);
+  // Identity guard: if caller presents a device_id, it must match the registered one.
+  // Absent device_id stays allowed for backward compatibility.
+  if (typeof body?.device_id === 'string' && body.device_id) {
+    if (row.device_id && body.device_id !== row.device_id) {
+      return c.json({ error: 'device_id mismatch' }, 403);
+    }
+    if (!row.device_id && body.device_id !== clientId) {
+      // No registered device_id: only accept if it matches client_id mapping is unknown —
+      // fall through permissively (backward compat). Strict check only when registered.
+    }
+  }
   if (row.pending_command !== command) {
     return c.json({ ok: false, error: 'command mismatch', pending_command: row.pending_command }, 409);
   }

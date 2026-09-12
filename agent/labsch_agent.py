@@ -148,7 +148,35 @@ def load_agent_config() -> dict:
         }
         _atomic_write_json(CONFIG_FILE, default)
         return default
-    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    try:
+        cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        # Corrupt config: back it up, write a fresh default, don't crash.
+        try:
+            import time as _time
+            stamp = _time.strftime("%Y%m%d-%H%M%S")
+            backup = CONFIG_FILE.with_name(f"{CONFIG_FILE.name}.corrupt-{stamp}")
+            try:
+                import shutil as _shutil
+                _shutil.copyfile(CONFIG_FILE, backup)
+            except OSError:
+                pass
+        except Exception:
+            pass
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        default = {
+            "server_url": os.environ.get("SCHOOL_SERVER_URL", "http://localhost:8080"),
+            "api_token": os.environ.get("SCHOOL_API_TOKEN", ""),
+            "client_id": os.environ.get("SCHOOL_CLIENT_ID", ""),
+            "display_name": os.environ.get("SCHOOL_DISPLAY_NAME", ""),
+            "is_test": False,
+            "version": "0.1.0",
+        }
+        try:
+            _atomic_write_json(CONFIG_FILE, default)
+        except OSError:
+            pass
+        return default
     # Backfill new fields for old configs
     if "display_name" not in cfg:
         cfg["display_name"] = ""
@@ -210,8 +238,25 @@ def ensure_client_id(cfg: dict) -> str:
     """Generate client_id if missing."""
     cid = cfg.get("client_id", "").strip()
     if not cid:
-        import uuid
         import platform
+        # Prefer a stable ID derived from device_id before random fallback.
+        try:
+            import device_id as _device_id
+            dev = _device_id.get_device_id()
+            # get_device_id returns e.g. 'dev-<16hex>' or 'host-<16hex>'
+            hexpart = ""
+            if isinstance(dev, str) and "-" in dev:
+                hexpart = dev.split("-", 1)[1]
+            hexpart = "".join(c for c in hexpart if c in "0123456789abcdefABCDEF")[:12].lower()
+            if len(hexpart) == 12:
+                hostname = get_identity()[0]
+                cid = f"{hostname.lower()}-{hexpart}"
+                cfg["client_id"] = cid
+                save_agent_config(cfg)
+                return cid
+        except Exception:
+            pass
+        import uuid
         # Use hostname + uuid suffix for human-readable id
         hostname = get_identity()[0]
         short = uuid.uuid4().hex[:8]
@@ -259,8 +304,12 @@ def apply_config(cfg_resp, client, previous_blocked_apps):
     return blocked_apps, blocked_websites, allowed_websites
 
 
-def run_loop(cfg: dict) -> None:
-    """Main agent loop."""
+def run_loop(cfg: dict, stop_check=None) -> None:
+    """Main agent loop.
+
+    stop_check: optional callable returning True when the loop should exit
+    (used by the Windows service wrapper for cooperative shutdown).
+    """
     client_id = ensure_client_id(cfg)
     server_url = cfg["server_url"]
     api_token = cfg["api_token"]
@@ -298,8 +347,16 @@ def run_loop(cfg: dict) -> None:
     current_blocked_websites: list = []
     current_allowed_websites: list = []
     current_device_flags: dict = {}  # {"disable_camera": bool, "disable_audio": bool}
+    consecutive_failures = 0
 
     while True:
+        if stop_check is not None:
+            try:
+                if stop_check():
+                    print("[labsch_agent] stop requested, exiting loop", flush=True)
+                    break
+            except Exception:
+                pass
         now = time.time()
         try:
             if now - last_download_poll >= DEFAULT_HEARTBEAT_INTERVAL:
@@ -311,6 +368,7 @@ def run_loop(cfg: dict) -> None:
                                             display_name=display_name, is_test=is_test)
                 if cfg_resp is not None:
                     last_heartbeat = now
+                    consecutive_failures = 0
                     # Heartbeat response includes config — use it
                     if client.has_config_changed(cfg_resp):
                         current_blocked_apps, current_blocked_websites, current_allowed_websites = apply_config(
@@ -365,17 +423,23 @@ def run_loop(cfg: dict) -> None:
                                     client.log_event("notify_rejected", "unsafe message payload")
                                     message = "Message from admin"
                                 safe_msg = message
-                                launched = False
+                                msg_ok = False
+                                sched_ok = False
+                                msg_reason = ""
+                                sched_reason = ""
                                 try:
                                     r = subprocess.run(
                                         ["msg.exe", "console", safe_msg],
                                         capture_output=True, timeout=10,
                                         creationflags=_NO_WINDOW,
                                     )
-                                    launched = (r.returncode == 0)
-                                except Exception:
-                                    launched = False
-                                if not launched:
+                                    msg_ok = (r.returncode == 0)
+                                    if not msg_ok:
+                                        err = (r.stderr.decode(errors="replace") if isinstance(r.stderr, bytes) else str(r.stderr or "")).strip()
+                                        msg_reason = f"msg.exe returncode={r.returncode}" + (f": {err[:200]}" if err else "")
+                                except Exception as e:
+                                    msg_reason = f"{type(e).__name__}: {e}"
+                                if not msg_ok:
                                     try:
                                         ps_cmd = (
                                             "Add-Type -AssemblyName System.Windows.Forms; "
@@ -383,7 +447,7 @@ def run_loop(cfg: dict) -> None:
                                             + safe_msg.replace("'", "''")
                                             + "', 'LabSCH Notify')"
                                         )
-                                        subprocess.run(
+                                        r1 = subprocess.run(
                                             ["schtasks", "/Create", "/F", "/SC", "ONCE",
                                              "/ST", "23:59", "/TN", "LabSCHNotify",
                                              "/TR",
@@ -392,14 +456,28 @@ def run_loop(cfg: dict) -> None:
                                             capture_output=True, timeout=10,
                                             creationflags=_NO_WINDOW,
                                         )
-                                        subprocess.run(
+                                        r2 = subprocess.run(
                                             ["schtasks", "/Run", "/TN", "LabSCHNotify"],
                                             capture_output=True, timeout=10,
                                             creationflags=_NO_WINDOW,
                                         )
-                                    except Exception:
-                                        pass
-                                cmd_ok = launched
+                                        sched_ok = (r1.returncode == 0 and r2.returncode == 0)
+                                        if not sched_ok:
+                                            sched_reason = f"schtasks create rc={r1.returncode}, run rc={r2.returncode}"
+                                    except Exception as e:
+                                        sched_reason = f"{type(e).__name__}: {e}"
+                                if msg_ok:
+                                    cmd_ok = True
+                                    command_reason = "notify via msg.exe"
+                                elif sched_ok:
+                                    cmd_ok = True
+                                    command_reason = "notify via schtasks fallback (msg.exe failed: %s)" % (msg_reason or "non-zero exit")
+                                else:
+                                    cmd_ok = False
+                                    command_reason = "notify failed: %s; %s" % (
+                                        msg_reason or "msg.exe failed",
+                                        sched_reason or "schtasks fallback failed",
+                                    )
                             else:
                                 print(f"[labsch_agent] unknown command: {pending}", flush=True)
                         except Exception as e:
@@ -418,7 +496,12 @@ def run_loop(cfg: dict) -> None:
                                 f"[labsch_agent] command {pending} failed: {command_reason}; will retry",
                                 flush=True,
                             )
-                # else: server unreachable, will retry next cycle
+                # else: server unreachable — back off so we don't hammer it every second
+                else:
+                    consecutive_failures += 1
+                    backoff = min(1 * (2 ** consecutive_failures), 60)
+                    last_heartbeat = now + backoff - int(cfg.get("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL))
+                    print(f"[labsch_agent] heartbeat failed ({consecutive_failures}x), backing off {backoff}s", flush=True)
 
             # Pull config (in case heartbeat didn't return config)
             if now - last_config_pull >= DEFAULT_CONFIG_PULL_INTERVAL:

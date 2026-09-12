@@ -203,7 +203,7 @@ export const reportDownload = withErrorHandler(async (c: Context<{ Bindings: Env
     error: req.error === undefined ? null : clampReportText(req.error),
     updated_at: now,
   };
-  await c.env.DB.prepare(
+  const res = await c.env.DB.prepare(
     `INSERT INTO download_status (task_id, client_id, download_state, execution_state, report, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(task_id, client_id) DO UPDATE SET
@@ -215,6 +215,9 @@ export const reportDownload = withErrorHandler(async (c: Context<{ Bindings: Env
        updated_at = excluded.updated_at
      WHERE download_status.download_state NOT IN ('done','failed','skipped')`
   ).bind(task_id, client_id, download_state, execution_state, JSON.stringify(report), now).run();
+  if ((res.meta.changes ?? 0) === 0) {
+    return c.json({ ok: false, ignored: true, reason: 'already-terminal' });
+  }
   return c.json({ ok: true });
 });
 

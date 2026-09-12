@@ -96,8 +96,9 @@ export const setOverride = withErrorHandler(async (c: Context<{ Bindings: Env }>
 
   const now = Date.now() / 1000;
   // v0.3.5: read admin identity from header (X-Admin-User) with
-  // fallback to 'admin'. Audit trail now records who made the change.
-  const updatedBy = (c.req.header('X-Admin-User') ?? 'admin').slice(0, 64);
+  // fallback to 'admin'. Sanitize to [A-Za-z0-9 ._-] max 64.
+  const rawUser = c.req.header('X-Admin-User') ?? 'admin';
+  const updatedBy = /^[A-Za-z0-9 ._-]{1,64}$/.test(rawUser) ? rawUser : 'admin';
 
   await db.prepare(
     `INSERT INTO client_overrides

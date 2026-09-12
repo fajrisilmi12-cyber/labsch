@@ -71,9 +71,21 @@ export async function getTokenInfo(c: Context<{ Bindings: Env }>) {
       detail: 'TOKEN_META KV namespace not bound',
     }, 501);
   }
-  // List all fingerprints
-  const list = await c.env.TOKEN_META.list({ prefix: 'fp:' });
-  const tokens = await Promise.all((list.keys ?? []).map(async (k) => {
+  // List all fingerprints (paginate with cursor until complete)
+  const allKeys: { name: string }[] = [];
+  let cursor: string | undefined = undefined;
+  let complete = false;
+  while (!complete) {
+    const res: any = cursor
+      ? await c.env.TOKEN_META.list({ prefix: 'fp:', cursor })
+      : await c.env.TOKEN_META.list({ prefix: 'fp:' });
+    const keys = (res.keys ?? []) as { name: string }[];
+    allKeys.push(...keys);
+    complete = !!res.list_complete;
+    cursor = res.cursor as string | undefined;
+    if (!complete && !cursor) break;
+  }
+  const tokens = await Promise.all(allKeys.map(async (k) => {
     const raw = await c.env.TOKEN_META!.get(k.name);
     if (!raw) return null;
     try { return JSON.parse(raw); } catch { return null; }

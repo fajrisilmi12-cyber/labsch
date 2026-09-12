@@ -1,5 +1,6 @@
 import { Context } from 'hono';
 import { getEffectiveFlags } from './device-flags';
+import { isValidMac } from './validation';
 
 interface SessionEnv {
   DB: D1Database;
@@ -34,6 +35,9 @@ export async function refreshSession(c: Context<{ Bindings: SessionEnv }>) {
   }
   if (!mac_address || typeof mac_address !== 'string' || !mac_address.trim()) {
     return c.json({ error: 'mac_address is required' }, 400);
+  }
+  if (!isValidMac(mac_address.trim())) {
+    return c.json({ error: 'mac_address format invalid' }, 400);
   }
   if (!student_name || typeof student_name !== 'string' || (student_name.match(/\p{L}/gu)?.length ?? 0) < 4 || student_name.length > 120) {
     return c.json({ error: 'student_name must be at least 4 letters (spaces/digits excluded from count)' }, 400);
