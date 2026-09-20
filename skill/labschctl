@@ -518,7 +518,7 @@ def cmd_command_all(args):
         sys.exit(1)
 
     # v0.3.5: allowed actions include lock and notify now.
-    if args.action not in ("shutdown", "restart", "lock", "notify"):
+    if args.action not in ("shutdown", "restart", "lock", "notify", "launcher_start", "launcher_stop"):
         print(f"Unknown action: {args.action}", file=sys.stderr)
         sys.exit(2)
 
@@ -713,14 +713,16 @@ def main():
     p_rename.add_argument("display_name", help="new display name (e.g. PC-LAB-01)")
     p_rename.set_defaults(func=cmd_rename)
 
-    p_command = sub.add_parser("command", help="remote shutdown/restart/lock/notify a PC")
-    p_command.add_argument("action", choices=["shutdown", "restart", "lock", "notify", "cancel"])
+    p_command = sub.add_parser("command", help="remote shutdown/restart/lock/notify/launcher a PC")
+    p_command.add_argument("action", choices=["shutdown", "restart", "lock", "notify", "cancel",
+                                              "launcher_start", "launcher_stop"])
     p_command.add_argument("client_id", help="target client ID (or display name / hostname)")
     p_command.add_argument("-m", "--message", help="message text (for 'notify' action)")
     p_command.set_defaults(func=cmd_command)
 
     p_command_all = sub.add_parser("command-all", help="queue shutdown/restart to MANY PCs at once")
-    p_command_all.add_argument("action", choices=["shutdown", "restart", "lock", "notify", "cancel"])
+    p_command_all.add_argument("action", choices=["shutdown", "restart", "lock", "notify", "cancel",
+                                                  "launcher_start", "launcher_stop"])
     p_command_all.add_argument("--online-only", action="store_true",
                                help="only target clients currently online")
     p_command_all.add_argument("--yes", action="store_true",

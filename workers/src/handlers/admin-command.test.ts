@@ -41,4 +41,20 @@ describe('remote command delivery confirmation', () => {
     expect(res.status).toBe(409);
     expect(await db.prepare('SELECT pending_command FROM clients WHERE client_id=?').bind(client).first('pending_command')).toBe('restart');
   });
+
+  it('launcher_start/launcher_stop accepted and confirmed like other commands', async () => {
+    await req(`admin/command/${client}`, 'POST', {command:'launcher_start'});
+    const hb = await req('heartbeat', 'POST', {client_id:client, hostname:'PC-CMD'});
+    expect((await hb.json() as any).pending_command).toBe('launcher_start');
+    let res = await req(`command/${client}/confirm`, 'POST', {command:'launcher_start', result:'success'});
+    expect(res.status).toBe(200);
+    expect(await db.prepare('SELECT pending_command FROM clients WHERE client_id=?').bind(client).first('pending_command')).toBeNull();
+
+    await req(`admin/command/${client}`, 'POST', {command:'launcher_stop'});
+    const hb2 = await req('heartbeat', 'POST', {client_id:client, hostname:'PC-CMD'});
+    expect((await hb2.json() as any).pending_command).toBe('launcher_stop');
+    res = await req(`command/${client}/confirm`, 'POST', {command:'launcher_stop', result:'failed', reason:'kiosk flag already off'});
+    expect(res.status).toBe(200);
+    expect(await db.prepare('SELECT pending_command FROM clients WHERE client_id=?').bind(client).first('pending_command')).toBe('launcher_stop');
+  });
 });

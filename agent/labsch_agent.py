@@ -266,6 +266,104 @@ def ensure_client_id(cfg: dict) -> str:
     return cid
 
 
+# ---------------------------------------------------------------------------
+# LabSCH Launcher (kiosk) control — v0.4.1
+# ---------------------------------------------------------------------------
+
+LAUNCHER_STATE_FILE = Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")) / "LabSCHLauncher" / "launcher.json"
+_LAUNCHER_ADMIN_EXIT_GRACE = 90  # seconds; don't re-spawn right after an admin exit
+
+
+def _launcher_state() -> dict:
+    try:
+        return json.loads(LAUNCHER_STATE_FILE.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+
+
+def _launcher_write_state(patch: dict) -> None:
+    LAUNCHER_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    state = _launcher_state()
+    state.update(patch)
+    tmp = LAUNCHER_STATE_FILE.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        os.replace(tmp, LAUNCHER_STATE_FILE)
+    except Exception:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _launcher_running() -> bool:
+    """True iff a labsch_launcher.py process is alive (check command line)."""
+    try:
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+              "Where-Object { $_.CommandLine -match 'labsch_launcher' } | "
+              "Select-Object -First 1 -ExpandProperty ProcessId")
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        blob = out.stdout.decode("utf-8", errors="replace").strip() if isinstance(out.stdout, bytes) else str(out.stdout or "").strip()
+        return bool(blob)
+    except Exception:
+        return False
+
+
+def _launch_in_user_session(script: str) -> tuple[bool, str]:
+    """Start launcher via windows_launch (console session, non-elevated)."""
+    try:
+        import windows_launch
+        windows_launch.launch_user_file(script)
+        return True, "dispatched to user session"
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _launcher_start() -> tuple[bool, str]:
+    """Enable kiosk mode + start launcher in the logged-in user's session."""
+    _launcher_write_state({"kiosk_enabled": True})
+    script = str(Path(__file__).resolve().parent / "labsch_launcher.py")
+    if not Path(script).is_file():
+        return False, f"launcher script missing: {script}"
+    # Marker so the launcher window is identifiable in tasklist output.
+    ok, reason = _launch_in_user_session(script)
+    if ok:
+        _launcher_write_state({"started_at": int(time.time())})
+        _launcher_write_state({"spawn_pending": True})
+    return ok, reason
+
+
+def _launcher_stop() -> tuple[bool, str]:
+    """Disable kiosk mode (agent stops re-spawning). Launcher itself stays
+    password-protected — this flips the flag; process exit still needs admin
+    password unless admin also confirms on the PC."""
+    _launcher_write_state({"kiosk_enabled": False, "stopped_at": int(time.time())})
+    return True, "kiosk mode disabled"
+
+
+def _launcher_maybe_respawn() -> None:
+    """Re-spawn launcher if kiosk mode is on and no launcher is running.
+    Skipped briefly after a password-authenticated admin exit."""
+    try:
+        state = _launcher_state()
+    except Exception:
+        return
+    if not state.get("kiosk_enabled"):
+        return
+    admin_exit_at = state.get("admin_exit_at")
+    if admin_exit_at and time.time() - admin_exit_at < _LAUNCHER_ADMIN_EXIT_GRACE:
+        return
+    if _launcher_running():
+        return
+    script = Path(__file__).resolve().parent / "labsch_launcher.py"
+    if script.is_file():
+        _launch_in_user_session(str(script))
+
+
 def apply_config(cfg_resp, client, previous_blocked_apps):
     """Apply config to hosts, browser policy, and IFEO consistently."""
     blocked_apps = cfg_resp.get("blocked_apps", [])
@@ -389,6 +487,11 @@ def run_loop(cfg: dict, stop_check=None) -> None:
                         current_device_flags,
                         log_fn=report_device_result,
                     )
+                    # LabSCH Launcher kiosk guard — re-spawn if killed
+                    try:
+                        _launcher_maybe_respawn()
+                    except Exception as exc:
+                        print(f"[labsch_agent] launcher respawn check failed: {exc}", flush=True)
                     # v0.4.0-test2 — accept canonical_client_id from server.
                     # If the server resolved our unstable client_id to a
                     # canonical one (via device_id), update our local
@@ -417,6 +520,10 @@ def run_loop(cfg: dict, stop_check=None) -> None:
                                 outcome = command_executor.execute(pending)
                                 cmd_ok = outcome.ok
                                 command_reason = outcome.reason
+                            elif pending == "launcher_start":
+                                cmd_ok, command_reason = _launcher_start()
+                            elif pending == "launcher_stop":
+                                cmd_ok, command_reason = _launcher_stop()
                             elif pending == "notify":
                                 message = cfg_resp.get("pending_command_message") or "Message from admin"
                                 if not _is_safe_notify_message(message):

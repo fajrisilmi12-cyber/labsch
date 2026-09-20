@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import type { Env } from '../index';
 import { ValidationError, withErrorHandler, isValidCommandMessage } from './validation';
 
-const VALID_COMMANDS = new Set(['shutdown', 'restart', 'lock', 'notify']);
+const VALID_COMMANDS = new Set(['shutdown', 'restart', 'lock', 'notify', 'launcher_start', 'launcher_stop']);
 const COMMAND_TTL_SECONDS = 3600;  // 1 hour
 
 export const setClientCommand = withErrorHandler(async (c: Context<{ Bindings: Env }>) => {

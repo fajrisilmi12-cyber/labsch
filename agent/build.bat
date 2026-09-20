@@ -91,6 +91,7 @@ pyinstaller --onefile --name LabSCHAgent ^
     --add-data "config_sync.py;." ^
     --add-data "app_blocker.py;." ^
     --add-data "website_blocker.py;." ^
+    --add-data "labsch_launcher.py;." ^
     labsch_agent.py
 
 if errorlevel 1 (
