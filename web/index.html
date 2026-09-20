@@ -55,6 +55,9 @@
       <a href="#device" class="nav-item" data-view="device">
         <span class="nav-icon">📷</span><span class="nav-label">Device</span>
       </a>
+      <a href="#launcher" class="nav-item" data-view="launcher">
+        <span class="nav-icon">🎮</span><span class="nav-label">Launcher</span>
+      </a>
       <a href="#events" class="nav-item" data-view="events">
         <span class="nav-icon">📜</span><span class="nav-label">Events</span>
       </a>
@@ -221,6 +224,43 @@
         <div class="input-group mt-3">
           <input type="text" id="per-notify-msg" placeholder="Pesan untuk PC ini..." class="input-grow">
           <button class="btn btn-primary" onclick="LabSCH.perNotify()">📢 Notify</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ LAUNCHER ═══ -->
+    <section id="view-launcher" class="view">
+      <div class="view-header">
+        <h1>🎮 LabSCH Launcher <span class="badge">kiosk</span></h1>
+        <button class="btn btn-primary" onclick="LabSCH.refreshClients()">🔄 Refresh</button>
+      </div>
+      <div class="card">
+        <h3>Mode Kiosk per PC</h3>
+        <p class="card-desc">Launcher fullscreen (Word, Excel, PowerPoint, Chrome, Packet Tracer, VirtualBox). Keluar hanya dengan password admin. Install agent biasa dulu — aktifkan kiosk dari sini, bukan dari PC.</p>
+        <div class="input-group">
+          <select id="launcher-client-select" class="input-grow"><option value="">-- Pilih PC --</option></select>
+        </div>
+        <div class="quick-actions mt-3">
+          <button class="btn btn-success" onclick="LabSCH.perLauncher('launcher_start')">▶️ Aktifkan Kiosk</button>
+          <button class="btn btn-secondary" onclick="LabSCH.perLauncher('launcher_stop')">⏹ Matikan Kiosk</button>
+        </div>
+      </div>
+      <div class="card mt-3">
+        <h3>Bulk Kiosk</h3>
+        <p class="card-desc">Aktifkan/matikan kiosk di semua PC yang online sekaligus.</p>
+        <div class="quick-actions">
+          <button class="btn btn-success" onclick="LabSCH.bulkCommand('launcher_start', true)">▶️ Kiosk All (Online)</button>
+          <button class="btn btn-secondary" onclick="LabSCH.bulkCommand('launcher_stop', true)">⏹ Stop Kiosk All (Online)</button>
+        </div>
+      </div>
+      <div class="card mt-3">
+        <h3>Status Kiosk</h3>
+        <p class="card-desc">PC dengan pending launcher command tampil di bawah.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Status</th><th>Pending</th><th>Last Seen</th></tr></thead>
+            <tbody id="launcher-body"></tbody>
+          </table>
         </div>
       </div>
     </section>

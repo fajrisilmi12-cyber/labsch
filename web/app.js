@@ -334,18 +334,48 @@ const LabSCH = (() => {
 
   // ─── Commands ───
   function populateClientSelectors() {
-    const selects = ['cmd-client-select', 'device-client-select'];
+    const selects = ['cmd-client-select', 'device-client-select', 'launcher-client-select'];
     selects.forEach(id => {
       const sel = document.getElementById(id);
       if (!sel) return;
       const val = sel.value;
       sel.innerHTML = '<option value="">-- Pilih PC --</option>' +
         clients.map(c => {
-          const status = id === 'device-client-select' ? ` — ${isClientOnline(c) ? 'Online' : 'Offline'}` : '';
+          const status = (id === 'device-client-select' || id === 'launcher-client-select')
+            ? ` — ${isClientOnline(c) ? 'Online' : 'Offline'}` : '';
           return `<option value="${c.client_id}">${esc(c.display_name || c.client_id)}${c.is_test ? ' [test]' : ''}${status}</option>`;
         }).join('');
       sel.value = val;
     });
+  }
+
+  async function perLauncher(cmd) {
+    const clientId = document.getElementById('launcher-client-select').value;
+    if (!clientId) { toast('Pilih PC dulu!', 'error'); return; }
+    const c = clients.find(x => x.client_id === clientId);
+    const name = c?.display_name || clientId;
+    const label = cmd === 'launcher_start' ? 'Aktifkan kiosk' : 'Matikan kiosk';
+    if (!confirm(`${label} di ${name}?`)) return;
+    try {
+      await api('POST', `/api/admin/command/${clientId}?command=${cmd}`);
+      toast(`${label} queued untuk ${name}`, 'success');
+      renderLauncherTable();
+    } catch (e) { toast('Error: ' + e.message, 'error'); }
+  }
+
+  function renderLauncherTable() {
+    const tb = document.getElementById('launcher-body');
+    if (!tb) return;
+    tb.innerHTML = clients.map(c => {
+      const pend = c.pending_command || '';
+      const isLauncher = pend.startsWith('launcher_');
+      return `<tr>
+        <td>${esc(c.display_name || c.client_id)}</td>
+        <td>${isClientOnline(c) ? '<span class="text-success">● Online</span>' : '<span class="text-muted">○ Offline</span>'}</td>
+        <td>${pend ? (isLauncher ? `<span class="text-success">${pend}</span>` : `<span class="text-muted">${pend}</span>`) : '<span class="text-muted">-</span>'}</td>
+        <td>${esc(fmtAgo(c.last_seen))}</td>
+      </tr>`;
+    }).join('');
   }
 
   async function perCommand(cmd) {
@@ -656,6 +686,7 @@ const LabSCH = (() => {
       case 'commands': if (!clients.length) loadDashboard(); break;
       case 'downloads': refreshDownloads(); break;
       case 'device': loadDevice(); if (!clients.length) loadDashboard(); break;
+      case 'launcher': renderLauncherTable(); if (!clients.length) loadDashboard(); break;
       case 'events': refreshEvents(); break;
     }
     // Close mobile sidebar
@@ -767,6 +798,7 @@ const LabSCH = (() => {
     addItem, removeItem, clearList,
     saveProfile, activateProfile, deleteProfile, refreshProfiles: loadProfiles,
     perCommand, perNotify, bulkCommand, bulkNotify,
+    perLauncher, renderLauncherTable,
     refreshDownloads, createDownload, cancelDownload,
     saveDeviceFlags, loadPerDevice, savePerDevice, clearPerDevice,
     refreshEvents, closeModal,
