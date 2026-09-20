@@ -267,7 +267,11 @@ class Kiosk(tk.Tk):
         try:
             # DETACHED_PROCESS so closing the launcher doesn't kill the app,
             # and the app's windows appear on the user's desktop.
-            subprocess.Popen([path], closefd=True,
+            # Do not pass closefd: Popen accepts close_fds (not closefd), and
+            # Windows rejects close_fds=True with some stdio configurations.
+            # The launcher is already detached from the agent's control flow.
+            subprocess.Popen([path],
+                             close_fds=False,
                              creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
             self._flash(f"{Path(path).stem} dibuka")
         except Exception as exc:

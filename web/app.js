@@ -394,7 +394,15 @@ const LabSCH = (() => {
     const name = c?.display_name || clientId;
     if (!confirm(`Kirim "${cmd}" ke ${name}?`)) return;
     try {
+      if (cmd === 'cancel') {
+        await api('DELETE', `/api/admin/command/${clientId}`);
+        await refreshClients();
+        renderLauncherTable();
+        toast(`Command dibatalkan untuk ${name}`, 'success');
+        return;
+      }
       await api('POST', `/api/admin/command/${clientId}?command=${cmd}`);
+      await refreshClients();
       toast(`${cmd} queued untuk ${name}`, 'success');
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
@@ -420,7 +428,11 @@ const LabSCH = (() => {
     let ok = 0, fail = 0;
     for (const c of targets) {
       try {
-        await api('POST', `/api/admin/command/${c.client_id}?command=${cmd}`);
+        if (cmd === 'cancel') {
+          await api('DELETE', `/api/admin/command/${c.client_id}`);
+        } else {
+          await api('POST', `/api/admin/command/${c.client_id}?command=${cmd}`);
+        }
         ok++;
       } catch { fail++; }
     }
