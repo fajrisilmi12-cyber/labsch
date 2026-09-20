@@ -265,14 +265,16 @@ class Kiosk(tk.Tk):
 
     def _open(self, path):
         try:
-            # DETACHED_PROCESS so closing the launcher doesn't kill the app,
-            # and the app's windows appear on the user's desktop.
-            # Do not pass closefd: Popen accepts close_fds (not closefd), and
-            # Windows rejects close_fds=True with some stdio configurations.
-            # The launcher is already detached from the agent's control flow.
-            subprocess.Popen([path],
-                             close_fds=False,
-                             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+            # The launcher must not remain topmost after launching a student
+            # application; otherwise the app opens behind this fullscreen UI.
+            # Keep fullscreen, but explicitly yield z-order to the new app.
+            self.attributes("-topmost", False)
+            self.lower()
+            subprocess.Popen(
+                [path],
+                close_fds=False,
+                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+            )
             self._flash(f"{Path(path).stem} dibuka")
         except Exception as exc:
             self._flash(f"Gagal membuka: {exc}")
