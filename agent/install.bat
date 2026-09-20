@@ -98,11 +98,33 @@ if errorlevel 1 (
 :: 3. Install dependencies
 :: ----------------------------------------------------------------
 echo [1/5] Installing dependencies...
-pip install --quiet psutil requests pywin32 >nul 2>&1
+where python >nul 2>&1
 if errorlevel 1 (
-    pip install --user psutil requests pywin32
+    echo ERROR: Python tidak ditemukan di PATH.
+    pause
+    exit /b 1
 )
-echo       OK
+python -m pip --version >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: pip tidak tersedia pada Python aktif.
+    echo Jalankan: python -m ensurepip --upgrade
+    pause
+    exit /b 1
+)
+python -m pip install --upgrade --disable-pip-version-check psutil requests pywin32
+if errorlevel 1 (
+    echo ERROR: Gagal memasang dependency Python.
+    pause
+    exit /b 1
+)
+python -c "import win32api,win32con,win32process,win32security,win32ts; print('pywin32 OK')"
+if errorlevel 1 (
+    echo ERROR: pywin32 terpasang tetapi import gagal.
+    echo Coba jalankan: python -m pywin32_postinstall -install
+    pause
+    exit /b 1
+)
+echo       OK (pywin32 verified)
 
 :: ----------------------------------------------------------------
 :: 4. Setup config
