@@ -98,9 +98,9 @@ if errorlevel 1 (
 :: 3. Install dependencies
 :: ----------------------------------------------------------------
 echo [1/5] Installing dependencies...
-pip install --quiet psutil requests >nul 2>&1
+pip install --quiet psutil requests pywin32 >nul 2>&1
 if errorlevel 1 (
-    pip install --user psutil requests
+    pip install --user psutil requests pywin32
 )
 echo       OK
 
