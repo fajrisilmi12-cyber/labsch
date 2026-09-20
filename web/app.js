@@ -363,6 +363,15 @@ const LabSCH = (() => {
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   }
 
+  function fmtAgo(ts) {
+    if (!ts) return '-';
+    const seconds = Math.max(0, Math.floor(Date.now() / 1000 - Number(ts)));
+    if (seconds < 60) return `${seconds}s lalu`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m lalu`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}j lalu`;
+    return `${Math.floor(seconds / 86400)}h lalu`;
+  }
+
   function renderLauncherTable() {
     const tb = document.getElementById('launcher-body');
     if (!tb) return;
