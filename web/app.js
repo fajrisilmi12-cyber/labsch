@@ -709,6 +709,7 @@ const LabSCH = (() => {
       case 'device': loadDevice(); if (!clients.length) loadDashboard(); break;
       case 'launcher': renderLauncherTable(); if (!clients.length) loadDashboard(); break;
       case 'events': refreshEvents(); break;
+      case 'agent': LabSCH.agentInit(); break;
     }
     // Close mobile sidebar
     document.getElementById('sidebar').classList.remove('open');
@@ -820,6 +821,7 @@ const LabSCH = (() => {
     saveProfile, activateProfile, deleteProfile, refreshProfiles: loadProfiles,
     perCommand, perNotify, bulkCommand, bulkNotify,
     perLauncher, renderLauncherTable,
+    agentInit, agentSaveConn, agentLoadAll, agentCall, agentKill, agentSaveAllow,
     refreshDownloads, createDownload, cancelDownload,
     saveDeviceFlags, loadPerDevice, savePerDevice, clearPerDevice,
     refreshEvents, closeModal,

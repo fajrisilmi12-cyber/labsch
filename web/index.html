@@ -61,6 +61,9 @@
       <a href="#events" class="nav-item" data-view="events">
         <span class="nav-icon">📜</span><span class="nav-label">Events</span>
       </a>
+      <a href="#agent" class="nav-item" data-view="agent">
+        <span class="nav-icon">🤖</span><span class="nav-label">Agent</span>
+      </a>
     </nav>
     <div class="sidebar-footer">
       <button id="btn-logout" class="btn btn-ghost btn-sm" title="Logout">🚪 Logout</button>
@@ -358,6 +361,62 @@
       </div>
     </section>
 
+    <!-- ═══ FULL AGENT ═══ -->
+    <section id="view-agent" class="view">
+      <div class="view-header">
+        <h1>🤖 Full Agent</h1>
+        <button class="btn btn-primary" onclick="LabSCH.agentLoadAll()">🔄 Refresh</button>
+      </div>
+      <div class="card">
+        <h3>Connection</h3>
+        <div class="form-grid">
+          <label class="field span-2"><span>Agent server URL</span><input type="url" id="agent-url" placeholder="https://... (labsch-agent tunnel)"></label>
+          <label class="field span-2"><span>Agent token</span><input type="password" id="agent-tok" class="mono" size="48"></label>
+        </div>
+        <button class="btn btn-primary mt-3" onclick="LabSCH.agentSaveConn()">💾 Simpan & Connect</button>
+        <span id="agent-kill-state" class="mt-3"></span>
+      </div>
+      <div class="card mt-3">
+        <h3>Tool Call</h3>
+        <div class="form-grid">
+          <label class="field"><span>Tool</span>
+            <select id="agent-tool">
+              <option>nmap_sn</option><option>nmap_sv</option><option>ping</option>
+              <option>ipconfig</option><option>netstat</option><option>tasklist</option>
+              <option>systeminfo</option><option>nslookup</option><option>route</option><option>whoami</option>
+            </select>
+          </label>
+          <label class="field"><span>Target (allowlist)</span><input type="text" id="agent-target" placeholder="192.168.1.10"></label>
+          <label class="field"><span>Client (opsional)</span><input type="text" id="agent-client" placeholder="(semua runner)"></label>
+        </div>
+        <div class="quick-actions mt-3">
+          <button class="btn btn-primary" onclick="LabSCH.agentCall()">🚀 Kirim Tool Call</button>
+          <button class="btn btn-danger" onclick="LabSCH.agentKill('on')">🔴 KILL-SWITCH ON</button>
+          <button class="btn btn-secondary" onclick="LabSCH.agentKill('off')">🟢 OFF</button>
+        </div>
+      </div>
+      <div class="card mt-3">
+        <h3>Allowlist Target</h3>
+        <div class="form-grid">
+          <label class="field span-2"><span>JSON array (CIDR/IP)</span><input type="text" id="agent-allowlist" class="mono" placeholder='["192.168.1.0/24"]'></label>
+        </div>
+        <button class="btn btn-primary mt-3" onclick="LabSCH.agentSaveAllow()">💾 Simpan Allowlist</button>
+      </div>
+      <div class="card mt-3">
+        <h3>Jobs</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Tool</th><th>argv</th><th>Client</th><th>Status</th></tr></thead>
+            <tbody id="agent-jobs"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card mt-3">
+        <h3>Audit Log</h3>
+        <pre id="agent-audit" style="max-height:300px;overflow:auto;background:#0f1420;padding:10px;border-radius:6px;font-size:11px"></pre>
+      </div>
+    </section>
+
     <!-- ═══ EVENTS ═══ -->
     <section id="view-events" class="view">
       <div class="view-header">
@@ -393,6 +452,7 @@
   </div>
 </div>
 
+<script src="agent.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
