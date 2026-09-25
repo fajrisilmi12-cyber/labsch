@@ -4,9 +4,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_batch_installer_boot_task_runs_continuous_agent():
+    # v0.4.0 unified: ONE task "LabSCHAgent" (SYSTEM, onstart), no --once.
     text = (ROOT / "agent" / "install.bat").read_text(encoding="utf-8")
-    onboot = next(line for line in text.splitlines() if 'schtasks /create /tn "LabSCHAgentOnBoot"' in line)
-    assert "--once" not in onboot, "boot task must keep polling after restart"
+    create = next(line for line in text.splitlines() if 'schtasks /create /tn "LabSCHAgent"' in line)
+    assert "--once" not in create, "task must keep polling after restart"
+    assert 'schtasks /create /tn "LabSCHAgentOnBoot"' not in text, "must not create legacy tasks"
+    assert 'schtasks /create /tn "LabSCHAgentWatchdog"' not in text, "must not create legacy tasks"
 
 
 def test_go_installer_boot_task_runs_continuous_agent():
@@ -43,8 +46,11 @@ def test_go_installer_reports_current_bundle_version():
 
 
 def test_agent_reports_version_from_installed_config():
+    # v0.4.0 unified: single source of truth agent/VERSION via version.py.
     text = (ROOT / "agent" / "labsch_agent.py").read_text(encoding="utf-8")
-    assert 'version = cfg.get("version", "0.4.0-test10")' in text
+    assert 'version = AGENT_VERSION' in text
+    assert 'from version import AGENT_VERSION' in text
+    assert 'cfg.get("version", "0.4.0-test10")' not in text
     assert 'version = "0.4.0-test2"' not in text
 
 

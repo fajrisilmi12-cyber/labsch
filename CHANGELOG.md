@@ -1,3 +1,37 @@
+## [0.4.0] - 2026-09-25
+
+### Unified install/upgrade/uninstall + lab-apps check & install (Win10 LTSC)
+
+Unify (audit Temp.rar `0.4.0-test13` vs repo):
+- Single install location `%ProgramFiles%\LabSCHAgent` (code) + `%ProgramData%\LabSCHAgent` (state).
+- Single runtime `runtime\python.exe`, single scheduled task `LabSCHAgent` (SYSTEM, IgnoreNew).
+  Legacy tasks (`LabSCHAgentWatchdog`, `LabSCHAgentOnBoot`, `LabSCH*Notify`) + Run key removed by
+  install/upgrade/uninstall.
+- Single version source `agent/VERSION` + `agent/version.py` (`AGENT_VERSION`); heartbeat,
+  config, installer, and health report all read it. Version unified to `0.4.0`.
+- Exit-code checks on every install/upgrade/uninstall/install-app stage; failures stop and
+  report instead of claiming success.
+
+Lab apps (Python, VirtualBox 6.1.50, Packet Tracer 9.0 64-bit):
+- New `agent/appcheck.py`: registry-uninstall + exe-path + version-probe checks with
+  `Terpasang`/`Belum terpasang`/`Versi tidak sesuai`/`Pemeriksaan gagal` + path/version evidence.
+  Never downgrades a newer version. `agent/check_apps.bat` for manual technician checks.
+- New `agent/app_install.py`: sequential installs to `C:\Downloads` with SHA-256 + Authenticode
+  verification (abort on failure), per-spec silent flags, exit-code checks, re-check, JSON report
+  at `%ProgramData%\LabSCHAgent\app_install_report.json`, `Perlu restart` instead of auto-reboot.
+- New `agent/app_config.json`: versions/URLs/checksums as admin configuration (Packet Tracer
+  archive.org URL flagged third-party; `ADMIN-FILL-SHA256-*` must be replaced before production).
+- Health report in heartbeat: `agent_version`, `last_heartbeat`, `policy_status`,
+  `launcher_status`, `last_failure` (+ `%ProgramData%\LabSCHAgent\health.json`).
+- Docs: `docs/APPCHECK.md`, `docs/RECOVERY.md`, `docs/AUDIT_UNIFY.md`.
+
+### Verification status
+
+- Linux (VPS): `py_compile` clean, `pytest tests/test_appcheck.py` passes (mocked winreg),
+  appcheck logic simulated on Linux.
+- Windows: BELUM — requires Win10 LTSC VM (check -> install -> reboot -> re-check ->
+  upgrade -> uninstall). Do NOT claim Windows testing passed.
+
 ## [0.4.0-test10] - 2026-09-09
 
 ### Test release — Web UI, durable downloads, sessions, and reliability

@@ -41,6 +41,8 @@ import device_id
 import device_blocker
 import command_executor
 from downloader import DownloadDispatcher
+from version import AGENT_VERSION
+from datetime import datetime, timezone
 
 # v0.3.5 — subprocess.CREATE_NO_WINDOW so spawned reg.exe/schtasks.exe/etc.
 # never flash a console window at the student. Constant is Windows-only;
@@ -402,6 +404,34 @@ def apply_config(cfg_resp, client, previous_blocked_apps):
     return blocked_apps, blocked_websites, allowed_websites
 
 
+LAST_FAILURE = ""
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def build_health_report(last_heartbeat_iso, policy_status, launcher_status):
+    """PC health report for heartbeat (v0.4.0 unified)."""
+    return {
+        "agent_version": AGENT_VERSION,
+        "last_heartbeat": last_heartbeat_iso or "",
+        "policy_status": policy_status or {},
+        "launcher_status": launcher_status or "unknown",
+        "last_failure": LAST_FAILURE,
+    }
+
+
+def save_health_report(report) -> None:
+    try:
+        base = os.environ.get("PROGRAMDATA") or ("C:/ProgramData" if os.name == "nt" else "/tmp/LabSCHAgent-state")
+        path = Path(base) / "LabSCHAgent" / "health.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def run_loop(cfg: dict, stop_check=None) -> None:
     """Main agent loop.
 
@@ -411,7 +441,14 @@ def run_loop(cfg: dict, stop_check=None) -> None:
     client_id = ensure_client_id(cfg)
     server_url = cfg["server_url"]
     api_token = cfg["api_token"]
-    version = cfg.get("version", "0.4.0-test10")
+    global LAST_FAILURE
+    version = AGENT_VERSION  # single source of truth: agent/VERSION
+    if cfg.get("version") != version:
+        cfg["version"] = version
+        try:
+            save_agent_config(cfg)
+        except Exception:
+            pass
 
     if not api_token:
         print("FATAL: api_token not set. Run with --setup first.", file=sys.stderr)
@@ -439,6 +476,8 @@ def run_loop(cfg: dict, stop_check=None) -> None:
 
     last_download_poll = 0
     last_heartbeat = 0
+    last_heartbeat_iso = ""
+    last_failure = ""
     last_config_pull = 0
     last_app_kill = 0
     current_blocked_apps: list = []
@@ -462,11 +501,30 @@ def run_loop(cfg: dict, stop_check=None) -> None:
                 last_download_poll = now
             # Heartbeat
             if now - last_heartbeat >= int(cfg.get("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL)):
+                try:
+                    launcher_ok = _launcher_running()
+                    launcher_status = "running" if launcher_ok else "stopped"
+                except Exception:
+                    launcher_status = "unknown"
+                policy_status = {
+                    "apps_blocked": len(current_blocked_apps),
+                    "websites_blocked": len(current_blocked_websites),
+                    "websites_allowed": len(current_allowed_websites),
+                    "camera_disabled": bool(current_device_flags.get("disable_camera", False)),
+                    "audio_disabled": bool(current_device_flags.get("disable_audio", False)),
+                }
+                LAST_FAILURE = last_failure
+                health = build_health_report(last_heartbeat_iso, policy_status, launcher_status)
+                save_health_report(health)
                 cfg_resp = client.heartbeat(hostname, ip, user, version, dev_id, mac,
-                                            display_name=display_name, is_test=is_test)
+                                            display_name=display_name, is_test=is_test,
+                                            health=health)
                 if cfg_resp is not None:
                     last_heartbeat = now
+                    last_heartbeat_iso = _utcnow_iso()
                     consecutive_failures = 0
+                    last_failure = ""
+                    LAST_FAILURE = ""
                     # Heartbeat response includes config — use it
                     if client.has_config_changed(cfg_resp):
                         current_blocked_apps, current_blocked_websites, current_allowed_websites = apply_config(
@@ -606,6 +664,8 @@ def run_loop(cfg: dict, stop_check=None) -> None:
                 # else: server unreachable — back off so we don't hammer it every second
                 else:
                     consecutive_failures += 1
+                    last_failure = "heartbeat failed %sx (server unreachable)" % consecutive_failures
+                    LAST_FAILURE = last_failure
                     backoff = min(1 * (2 ** consecutive_failures), 60)
                     last_heartbeat = now + backoff - int(cfg.get("heartbeat_interval", DEFAULT_HEARTBEAT_INTERVAL))
                     print(f"[labsch_agent] heartbeat failed ({consecutive_failures}x), backing off {backoff}s", flush=True)
@@ -629,6 +689,8 @@ def run_loop(cfg: dict, stop_check=None) -> None:
                 last_app_kill = now
 
         except Exception as e:
+            last_failure = "loop error: %s" % str(e)[:300]
+            LAST_FAILURE = last_failure
             print(f"[labsch_agent] loop error: {e}", file=sys.stderr)
 
         time.sleep(1)
@@ -795,7 +857,8 @@ def main():
         hostname, ip, user = get_identity()
         dev_id = device_id.get_device_id()
         mac = device_id.get_primary_mac() or "unknown"
-        result = client.heartbeat(hostname, ip, user, cfg.get("version", "0.1.0"), dev_id, mac)
+        once_health = build_health_report("", {"mode": "once"}, "unknown")
+        result = client.heartbeat(hostname, ip, user, AGENT_VERSION, dev_id, mac, health=once_health)
         print(json.dumps(result, indent=2) if result else "FAILED")
         return
 

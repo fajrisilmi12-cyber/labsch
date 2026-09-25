@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-echo LabSCH 0.4.0-test1 upgrade - existing configuration only
+echo LabSCH unified upgrade (v0.4.0, single task LabSCHAgent) - existing configuration only
 net session >nul 2>&1
 if errorlevel 1 (
   echo ERROR: Right-click upgrade.bat and select Run as administrator.

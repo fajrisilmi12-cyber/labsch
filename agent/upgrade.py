@@ -9,7 +9,7 @@ from pathlib import Path
 MODULES = ['labsch_agent.py','config_sync.py','app_blocker.py','website_blocker.py',
            'browser_policy.py','ifeo_blocker.py','self_protect.py','device_id.py',
            'device_blocker.py','command_executor.py','downloader.py','windows_launch.py',
-           'labsch_launcher.py']
+           'labsch_launcher.py','version.py','appcheck.py','app_install.py']
 
 
 def validate_existing_config(path):
@@ -63,6 +63,10 @@ def main():
     if alive: raise OSError('Old agent did not stop; no new agent started. Resolve manually and rerun upgrade.')
     for module in MODULES:
         shutil.copy2(source/module,target/module)
+    for extra in ['app_config.json', 'VERSION']:
+        src = source/extra
+        if src.is_file():
+            shutil.copy2(src,target/extra)
     shutil.copytree(source/'runtime',target/'runtime',dirs_exist_ok=True)
     python = target/'runtime/python.exe'
     # Import every shipped dependency before registering a persistent task.

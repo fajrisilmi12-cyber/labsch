@@ -1,0 +1,41 @@
+{
+  "_comment": "LabSCH lab-apps policy — ADMIN CONFIGURATION. Versi, URL installer, dan checksum terpusat di sini, bukan tersebar di kode. Ganti nilai ADMIN-FILL-SHA256 dengan SHA-256 resmi sebelum production. Packet Tracer: utamakan installer resmi Cisco Networking Academy; URL archive.org di bawah adalah sumber pihak ketiga dan WAJIB lolos verifikasi Authenticode + checksum.",
+  "download_dir": "C:\\Downloads",
+  "python": {
+    "min_version": "3.10.0",
+    "recommended_version": "3.10.11",
+    "arch": "amd64",
+    "installer_url": "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe",
+    "sha256": "ADMIN-FILL-SHA256-PYTHON-3.10.11",
+    "silent_args": ["/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_pip=1"],
+    "registry_names": ["Python 3.10", "Python 3.11", "Python 3.12", "Python 3.13"],
+    "notes": "Jangan downgrade Python yang lebih baru secara otomatis; tandai Versi-tidak-sesuai bila di bawah min_version. Pertimbangkan runtime khusus LabSCH agar update Python siswa tidak merusak agent."
+  },
+  "virtualbox": {
+    "version": "6.1.50",
+    "build": "161033",
+    "installer_file": "VirtualBox-6.1.50-161033-Win.exe",
+    "installer_url": "https://download.virtualbox.org/virtualbox/6.1.50/VirtualBox-6.1.50-161033-Win.exe",
+    "sha256": "ADMIN-FILL-SHA256-VIRTUALBOX-6.1.50",
+    "silent_args": ["--silent", "--ignore-reboot"],
+    "registry_names": ["Oracle VM VirtualBox"],
+    "exe_names": ["VirtualBox.exe", "VBoxManage.exe"],
+    "install_locations": ["C:\\Program Files\\Oracle\\VirtualBox", "C:\\Program Files (x86)\\Oracle\\VirtualBox"],
+    "needs_restart": true
+  },
+  "packet_tracer": {
+    "version": "9.0.0",
+    "arch": "64-bit",
+    "installer_file": "CiscoPacketTracer_900_win_64bit.exe",
+    "installer_url": "https://dn710200.ca.archive.org/0/items/cisco-packet-tracer-900-win-64bit/CiscoPacketTracer_900_win_64bit.exe",
+    "third_party_source": true,
+    "third_party_warning": "Sumber pihak ketiga (archive.org). Wajib lolos Authenticode + checksum; bila gagal, JANGAN install dan minta installer resmi Cisco Networking Academy ke admin.",
+    "sha256": "ADMIN-FILL-SHA256-PACKETTRACER-900-64BIT",
+    "silent_args": ["/VERYSILENT", "/NORESTART"],
+    "silent_validated": false,
+    "registry_names": ["Cisco Packet Tracer"],
+    "exe_names": ["PacketTracer.exe"],
+    "install_locations": ["C:\\Program Files\\Cisco Packet Tracer 9.0"],
+    "notes": "JANGAN gunakan contoh nama CiscoPacketTracer_XXX_Windows_32bit_setup.exe — URL di atas adalah file 64-bit. Bila installer tidak mendukung /VERYSILENT, laporkan gagal dan tawarkan instalasi manual oleh admin."
+  }
+}

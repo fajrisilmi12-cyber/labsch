@@ -24,7 +24,7 @@ class AgentClient:
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("X-Agent-Token", self.api_token)
-        req.add_header("User-Agent", "LabSCHAgent/0.1.0")
+        req.add_header("User-Agent", "LabSCHAgent/0.4.0")
         if data:
             req.add_header("Content-Type", "application/json")
         try:
@@ -43,11 +43,14 @@ class AgentClient:
 
     def heartbeat(self, hostname: str, ip: str, user: str, version: str,
                   device_id: str = None, mac: str = None,
-                  display_name: str = None, is_test: bool = None) -> Optional[dict]:
+                  display_name: str = None, is_test: bool = None,
+                  health: dict = None) -> Optional[dict]:
         """POST /api/heartbeat. Returns latest config (or None on error).
 
         device_id and mac are optional but recommended for stable client_id.
         display_name and is_test for human-readable identification.
+        health is an optional PC-health report dict (server ignores
+        unknown fields safely; dashboard/log_event can consume it).
         """
         body = {
             "client_id": self.client_id,
@@ -65,6 +68,8 @@ class AgentClient:
             body["display_name"] = display_name
         if is_test is not None:
             body["is_test"] = is_test
+        if health is not None:
+            body["health"] = health
         return self._request("POST", "/api/heartbeat", body)
 
     def get_config(self) -> Optional[dict]:

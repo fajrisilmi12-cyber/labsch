@@ -113,10 +113,27 @@ echo       Camera/Audio   : RESTORED ^(tray OK^)
 :: ----------------------------------------------------------------
 :: [7/7] Hapus config + folder agent data
 :: ----------------------------------------------------------------
-echo [7/7] Menghapus config + folder data...
+echo [7/7] Menghapus config + folder data + kode...
 rmdir /s /q "C:\ProgramData\LabSCHAgent" >nul 2>&1 && echo       ProgramData    : DIHAPUS
+rmdir /s /q "%ProgramFiles%\LabSCHAgent" >nul 2>&1 && echo       ProgramFiles   : DIHAPUS
 :: Windows service (kalau pernah terinstall via install_service.py)
 python "%~dp0install_service.py" remove >nul 2>&1 && echo       Service        : DIHAPUS
+
+:: ----------------------------------------------------------------
+:: [8/7] Verifikasi: gagal bila sisa masih ada (jangan klaim BERSIH palsu)
+:: ----------------------------------------------------------------
+echo [8/7] Verifikasi kebersihan...
+set "LEFT=0"
+schtasks /query /tn "LabSCHAgent" >nul 2>&1 && echo       SISA task LabSCHAgent! && set "LEFT=1"
+if exist "C:\ProgramData\LabSCHAgent" echo       SISA folder ProgramData! && set "LEFT=1"
+if exist "%ProgramFiles%\LabSCHAgent" echo       SISA folder ProgramFiles! && set "LEFT=1"
+if not "%LEFT%"=="0" (
+    echo.
+    echo PERINGATAN: sisa LabSCH masih terdeteksi - selesaikan manual, JANGAN anggap bersih.
+    popd >nul 2>&1
+    exit /b 1
+)
+echo       BERSIH terverifikasi
 
 echo.
 echo ================================================================
@@ -135,8 +152,8 @@ echo   - Windows service (kalau ada)
 echo.
 echo CATATAN:
 echo   - Browser perlu di-RESTART biar policy hilang dari memory.
-echo   - File agent (python files) di folder ini gak kehapus.
-echo     Hapus manual folder ini kalau mau total bersih.
+echo   - Kode di %%ProgramFiles%%\LabSCHAgent ikut dihapus.
+echo     Hapus manual folder sumber installer ini kalau perlu.
 echo   - Record PC masih ada di server (bersihkan via labschctl).
 echo.
 pause

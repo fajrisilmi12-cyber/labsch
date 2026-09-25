@@ -1,190 +1,179 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title LabSCHAgent Installer
+title LabSCHAgent Installer v0.4.0 (unified)
 
 :: ================================================================
-:: LabSCHAgent Installer
+:: LabSCHAgent Installer - UNIFIED (v0.4.0)
+::   Lokasi   : %ProgramFiles%\LabSCHAgent
+::   Runtime  : %ProgramFiles%\LabSCHAgent\runtime\python.exe (SATU runtime)
+::   Task     : LabSCHAgent (SATU scheduled task, SYSTEM, IgnoreNew)
+::   State    : %ProgramData%\LabSCHAgent\config.ini
+::   Versi    : agent\VERSION (sumber tunggal, via version.py)
+:: Setiap tahap memeriksa exit code; GAGAL = berhenti, JANGAN klaim sukses.
 :: ================================================================
 
+set "FAIL=0"
+
 :: ----------------------------------------------------------------
-:: 0. Auto-elevate ke Administrator
+:: [0] Administrator check
 :: ----------------------------------------------------------------
-echo.
-echo ================================================================
-echo LabSCHAgent Installer
-echo ================================================================
-echo.
-echo [0/5] Mengecek hak Administrator...
+echo [0/7] Mengecek hak Administrator...
 net session >nul 2>&1
 if errorlevel 1 (
-    echo.
-    echo =====================================================
-    echo  PERHATIAN: Belum ada hak Administrator!
-    echo =====================================================
-    echo.
-    echo CARA YANG BENAR:
-    echo   1. TUTUP window ini
-    echo   2. Klik kanan file install.bat
-    echo   3. Pilih "Run as administrator"
-    echo   4. Klik "Yes" di popup UAC
-    echo.
-    echo JANGAN double-click biasa! Harus klik kanan - Run as admin.
-    echo.
-    timeout /t 30 /nobreak >nul 2>&1
+    echo ERROR: Klik kanan install.bat ^> "Run as administrator".
     exit /b 1
 )
-echo       OK (running as Administrator)
-echo.
+echo       OK
 
 pushd "%~dp0" >nul 2>&1
 
 :: ----------------------------------------------------------------
-:: 1. Konfigurasi
+:: [1] Konfigurasi + versi tunggal
 :: ----------------------------------------------------------------
-set "SERVER_URL=https://labsch-api.<your-subdomain>.workers.dev"
+echo [1/7] Membaca konfigurasi...
+set "SERVER_URL=https://labsch-api.fajrisilmi6.workers.dev"
 set "API_TOKEN=<your-uuid-token>"
-
 if "%API_TOKEN%"=="<your-uuid-token>" (
-    echo ERROR: API_TOKEN masih placeholder.
-    pause
+    echo ERROR: API_TOKEN masih placeholder. Isi token enrollment dulu.
+    popd >nul 2>&1
     exit /b 2
 )
-if "%SERVER_URL%"=="https://labsch-api.<your-subdomain>.workers.dev" (
-    echo ERROR: SERVER_URL masih placeholder.
-    pause
-    exit /b 2
-)
+set "AGENT_VER=0.4.0"
+if exist VERSION set /p "AGENT_VER=" < VERSION
+echo       Server : %SERVER_URL%
+echo       Versi  : %AGENT_VER%
 
-echo Server: %SERVER_URL%
-echo Token:  %API_TOKEN:~0,8%...
-echo.
-
-:: ----------------------------------------------------------------
-:: 1b. Tanya display_name
-:: ----------------------------------------------------------------
-echo PENAMAAN KOMPUTER
-echo.
-echo Masukkan nama untuk PC ini (contoh: PC-LAB-01).
-echo Kosongkan untuk pakai nama otomatis.
-echo.
 set "DISPLAY_NAME="
-set /p "DISPLAY_NAME=Nama PC: "
+set /p "DISPLAY_NAME=Nama PC (kosong=PC-%COMPUTERNAME%): "
 if "%DISPLAY_NAME%"=="" set "DISPLAY_NAME=PC-%COMPUTERNAME%"
-echo Nama PC: %DISPLAY_NAME%
-echo.
-
-:: Test PC?
-set "IS_TEST="
-set /p "IS_TEST=PC testing/development? [y/N]: "
-if /i "%IS_TEST%"=="y" (
-    set "IS_TEST_FLAG=True"
-) else (
-    set "IS_TEST_FLAG=False"
-)
-echo Test PC: %IS_TEST_FLAG%
-echo.
+set "IS_TEST_FLAG=False"
+set /p "IS_TEST=PC testing? [y/N]: "
+if /i "%IS_TEST%"=="y" set "IS_TEST_FLAG=True"
+echo       Nama PC: %DISPLAY_NAME% (test=%IS_TEST_FLAG%)
 
 :: ----------------------------------------------------------------
-:: 2. Cek Python
+:: [2] Runtime tunggal
 :: ----------------------------------------------------------------
-where python >nul 2>&1
-if errorlevel 1 (
-    echo Python tidak ditemukan. Install Python 3.10+ dulu.
-    pause
-    exit /b 1
+echo [2/7] Mengecek runtime tunggal...
+if not exist "%~dp0runtime\python.exe" (
+    echo ERROR: runtime\python.exe tidak ditemukan di paket ini.
+    echo Gunakan paket full (dengan folder runtime^) atau jalankan upgrade.
+    popd >nul 2>&1
+    exit /b 3
 )
+"%~dp0runtime\python.exe" --version >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: runtime\python.exe tidak bisa dijalankan ^(exit %ERRORLEVEL%^).
+    popd >nul 2>&1
+    exit /b 3
+)
+echo       OK (runtime\python.exe)
 
 :: ----------------------------------------------------------------
-:: 3. Install dependencies
+:: [3] Dependencies ke runtime
 :: ----------------------------------------------------------------
-echo [1/5] Installing dependencies...
-where python >nul 2>&1
+echo [3/7] Memasang dependencies...
+"%~dp0runtime\python.exe" -m pip --version >nul 2>&1
 if errorlevel 1 (
-    echo ERROR: Python tidak ditemukan di PATH.
-    pause
-    exit /b 1
+    echo ERROR: pip tidak tersedia di runtime. Jalankan: runtime\python.exe -m ensurepip --upgrade
+    popd >nul 2>&1
+    exit /b 3
 )
-python -m pip --version >nul 2>&1
+"%~dp0runtime\python.exe" -m pip install --upgrade --disable-pip-version-check psutil requests pywin32
 if errorlevel 1 (
-    echo ERROR: pip tidak tersedia pada Python aktif.
-    echo Jalankan: python -m ensurepip --upgrade
-    pause
-    exit /b 1
+    echo ERROR: Gagal memasang dependency ^(exit %ERRORLEVEL%^). Berhenti.
+    popd >nul 2>&1
+    exit /b 3
 )
-python -m pip install --upgrade --disable-pip-version-check psutil requests pywin32
+"%~dp0runtime\python.exe" -c "import win32api,win32con,win32process,win32security,win32ts; print('pywin32 OK')"
 if errorlevel 1 (
-    echo ERROR: Gagal memasang dependency Python.
-    pause
-    exit /b 1
+    echo ERROR: pywin32 import gagal. Jalankan: runtime\python.exe -m pywin32_postinstall -install
+    popd >nul 2>&1
+    exit /b 3
 )
-python -c "import win32api,win32con,win32process,win32security,win32ts; print('pywin32 OK')"
-if errorlevel 1 (
-    echo ERROR: pywin32 terpasang tetapi import gagal.
-    echo Coba jalankan: python -m pywin32_postinstall -install
-    pause
-    exit /b 1
-)
-echo       OK (pywin32 verified)
-
-:: ----------------------------------------------------------------
-:: 4. Setup config
-:: ----------------------------------------------------------------
-echo [2/5] Writing config...
-if not exist "C:\ProgramData\LabSCHAgent" mkdir "C:\ProgramData\LabSCHAgent"
-python -c "import json,os;p=os.path.join(os.environ.get('PROGRAMDATA','C:/ProgramData'),'LabSCHAgent','config.ini');json.dump({'server_url':r'%SERVER_URL%','api_token':r'%API_TOKEN%','client_id':'','display_name':r'%DISPLAY_NAME%','is_test':%IS_TEST_FLAG%,'version':'0.4.0-test2'},open(p,'w',encoding='utf-8'),indent=2)"
 echo       OK
 
 :: ----------------------------------------------------------------
-:: 5. Install self-protection
+:: [4] Deploy ke %ProgramFiles%\LabSCHAgent (SATU lokasi)
 :: ----------------------------------------------------------------
-echo [3/5] Installing self-protection...
-schtasks /delete /tn "LabSCHAgentWatchdog" /f >nul 2>&1
-schtasks /delete /tn "LabSCHAgentOnBoot" /f >nul 2>&1
+echo [4/7] Deploy ke %%ProgramFiles%%\LabSCHAgent...
+set "TARGET=%ProgramFiles%\LabSCHAgent"
+mkdir "%TARGET%" >nul 2>&1
+for %%M in (labsch_agent.py config_sync.py version.py appcheck.py app_install.py app_config.json VERSION app_blocker.py website_blocker.py browser_policy.py ifeo_blocker.py self_protect.py device_id.py device_blocker.py command_executor.py downloader.py windows_launch.py labsch_launcher.py) do (
+    if exist "%~dp0%%M" copy /y "%~dp0%%M" "%TARGET%\%%M" >nul 2>&1
+)
+if not exist "%TARGET%\labsch_agent.py" (
+    echo ERROR: Gagal menyalin labsch_agent.py ke %TARGET%.
+    popd >nul 2>&1
+    exit /b 4
+)
+if exist "%~dp0runtime" xcopy /e /i /y "%~dp0runtime" "%TARGET%\runtime" >nul 2>&1
+if not exist "%TARGET%\runtime\python.exe" (
+    echo ERROR: Gagal menyalin runtime ke %TARGET%\runtime.
+    popd >nul 2>&1
+    exit /b 4
+)
+icacls "%TARGET%" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-32-545:(OI)(CI)RX" >nul 2>&1
+echo       OK (%TARGET%)
 
-:: Satu task kontinu saat boot. Jangan gunakan --once: mode itu heartbeat sekali lalu exit.
-:: Jangan buat watchdog periodik kedua karena dapat melahirkan beberapa instance agent.
-schtasks /create /tn "LabSCHAgentOnBoot" /tr "python \"%~dp0labsch_agent.py\"" /sc onstart /ru SYSTEM /rl HIGHEST /f >nul 2>&1
+:: ----------------------------------------------------------------
+:: [5] State + config (versi tunggal dari VERSION)
+:: ----------------------------------------------------------------
+echo [5/7] Menulis config...
+if not exist "C:\ProgramData\LabSCHAgent" mkdir "C:\ProgramData\LabSCHAgent" >nul 2>&1
+"%TARGET%\runtime\python.exe" -c "import json,os;p=os.path.join(os.environ.get('PROGRAMDATA','C:/ProgramData'),'LabSCHAgent','config.ini');json.dump({'server_url':r'%SERVER_URL%','api_token':r'%API_TOKEN%','client_id':'','display_name':r'%DISPLAY_NAME%','is_test':%IS_TEST_FLAG%,'version':r'%AGENT_VER%'},open(p,'w',encoding='utf-8'),indent=2)"
+if errorlevel 1 (
+    echo ERROR: Gagal menulis config.ini ^(exit %ERRORLEVEL%^).
+    popd >nul 2>&1
+    exit /b 5
+)
+icacls "C:\ProgramData\LabSCHAgent" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" >nul 2>&1
+echo       OK
+
+:: ----------------------------------------------------------------
+:: [6] SATU scheduled task: LabSCHAgent (+bersihkan legacy)
+:: ----------------------------------------------------------------
+echo [6/7] Mendaftarkan scheduled task tunggal LabSCHAgent...
+for %%T in (LabSCHAgentWatchdog LabSCHAgentOnBoot LabSCHNotify LabSCHAgentNotify) do (
+    schtasks /end /tn "%%T" >nul 2>&1
+    schtasks /delete /tn "%%T" /f >nul 2>&1
+)
+schtasks /end /tn "LabSCHAgent" >nul 2>&1
+schtasks /delete /tn "LabSCHAgent" /f >nul 2>&1
 reg delete "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" /v "LabSCHAgent" /f >nul 2>&1
-schtasks /run /tn "LabSCHAgentOnBoot" >nul 2>&1
-echo       OK
-
-:: ----------------------------------------------------------------
-:: 6. Lockdown (disable Task Manager)
-:: ----------------------------------------------------------------
-echo [4/5] Disabling Task Manager...
-reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /t REG_DWORD /d "1" /f >nul 2>&1
-reg add "HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" /v "DisableTaskMgr" /t REG_DWORD /d "1" /f >nul 2>&1
-taskkill /f /im taskmgr.exe >nul 2>&1
-echo       OK (jika belum aktif, coba logoff/login)
-
-:: ----------------------------------------------------------------
-:: 7. Test heartbeat
-:: ----------------------------------------------------------------
-echo [5/5] Testing connection...
-python labsch_agent.py --once
+schtasks /create /tn "LabSCHAgent" /tr "\"%TARGET%\runtime\python.exe\" \"%TARGET%\labsch_agent.py\"" /sc onstart /ru SYSTEM /rl HIGHEST /f
 if errorlevel 1 (
-    echo PERINGATAN: Gagal connect ke server.
-) else (
-    echo KONEKSI BERHASIL.
+    echo ERROR: Gagal membuat task LabSCHAgent ^(exit %ERRORLEVEL%^). Berhenti.
+    popd >nul 2>&1
+    exit /b 6
 )
+schtasks /query /tn "LabSCHAgent" >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Task LabSCHAgent tidak terdaftar setelah create. Berhenti.
+    popd >nul 2>&1
+    exit /b 6
+)
+echo       OK (task LabSCHAgent terdaftar)
+
+:: ----------------------------------------------------------------
+:: [7] Heartbeat uji (wajib sukses sebelum klaim selesai)
+:: ----------------------------------------------------------------
+echo [7/7] Tes koneksi heartbeat...
+"%TARGET%\runtime\python.exe" "%TARGET%\labsch_agent.py" --once
+if errorlevel 1 (
+    echo PERINGATAN: heartbeat gagal ^(exit %ERRORLEVEL%^) - task tetap terdaftar, periksa server/token.
+    popd >nul 2>&1
+    exit /b 7
+)
+schtasks /run /tn "LabSCHAgent" >nul 2>&1
 
 echo.
 echo ================================================================
-echo INSTALASI SELESAI
+echo INSTALASI SELESAI - LabSCHAgent %AGENT_VER%
+echo   Lokasi : %TARGET%
+echo   Runtime: %TARGET%\runtime\python.exe
+echo   Task   : LabSCHAgent
+echo   Nama PC: %DISPLAY_NAME%
 echo ================================================================
-echo Nama PC: %DISPLAY_NAME%
-echo.
-
-:: Tanya langsung start agent
-set "START_NOW="
-set /p "START_NOW=Start agent sekarang? [Y/n]: "
-if /i not "%START_NOW%"=="n" (
-    echo Starting agent...
-    python labsch_agent.py
-)
-
-echo.
-echo Tekan tombol apa saja untuk keluar...
-pause >nul
 popd >nul 2>&1
 exit /b 0
