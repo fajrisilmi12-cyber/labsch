@@ -99,7 +99,7 @@ echo       OK
 echo [4/7] Deploy ke %%ProgramFiles%%\LabSCHAgent...
 set "TARGET=%ProgramFiles%\LabSCHAgent"
 mkdir "%TARGET%" >nul 2>&1
-for %%M in (labsch_agent.py config_sync.py version.py appcheck.py app_install.py app_config.json VERSION app_blocker.py website_blocker.py browser_policy.py ifeo_blocker.py self_protect.py device_id.py device_blocker.py command_executor.py downloader.py windows_launch.py labsch_launcher.py) do (
+for %%M in (labsch_agent.py config_sync.py version.py appcheck.py app_install.py app_config.json VERSION app_blocker.py website_blocker.py browser_policy.py ifeo_blocker.py self_protect.py device_id.py device_blocker.py command_executor.py downloader.py windows_launch.py labsch_launcher.py run_launcher.bat) do (
     if exist "%~dp0%%M" copy /y "%~dp0%%M" "%TARGET%\%%M" >nul 2>&1
 )
 if not exist "%TARGET%\labsch_agent.py" (

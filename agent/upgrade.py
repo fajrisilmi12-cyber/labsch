@@ -9,7 +9,7 @@ from pathlib import Path
 MODULES = ['labsch_agent.py','config_sync.py','app_blocker.py','website_blocker.py',
            'browser_policy.py','ifeo_blocker.py','self_protect.py','device_id.py',
            'device_blocker.py','command_executor.py','downloader.py','windows_launch.py',
-           'labsch_launcher.py','version.py','appcheck.py','app_install.py']
+           'labsch_launcher.py','run_launcher.bat','version.py','appcheck.py','app_install.py']
 
 
 def validate_existing_config(path):

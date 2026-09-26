@@ -8,6 +8,11 @@ def test_windows_launch_fails_closed_off_windows(tmp_path):
     with pytest.raises(OSError, match='Windows'):
         windows_launch.launch_user_file(tmp_path/'a.pdf')
 
+def test_windows_launch_script_fails_closed_off_windows(tmp_path):
+    import windows_launch
+    with pytest.raises(OSError, match='Windows'):
+        windows_launch.launch_user_script(tmp_path/'labsch_launcher.py')
+
 def test_main_import_has_no_unconditional_fcntl():
     tree=ast.parse((Path(__file__).resolve().parents[1]/'agent/labsch_agent.py').read_text())
     assert not any(isinstance(n,ast.Import) and any(a.name=='fcntl' for a in n.names) for n in tree.body)

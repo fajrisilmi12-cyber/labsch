@@ -301,7 +301,7 @@ def _launcher_write_state(patch: dict) -> None:
 def _launcher_running() -> bool:
     """True iff a labsch_launcher.py process is alive (check command line)."""
     try:
-        ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        ps = ("Get-CimInstance Win32_Process -Filter \"Name='python.exe' or Name='pythonw.exe'\" | "
               "Where-Object { $_.CommandLine -match 'labsch_launcher' } | "
               "Select-Object -First 1 -ExpandProperty ProcessId")
         out = subprocess.run(
@@ -319,7 +319,7 @@ def _launch_in_user_session(script: str) -> tuple[bool, str]:
     """Start launcher via windows_launch (console session, non-elevated)."""
     try:
         import windows_launch
-        windows_launch.launch_user_file(script)
+        windows_launch.launch_user_script(script)
         return True, "dispatched to user session"
     except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"

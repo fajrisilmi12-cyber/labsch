@@ -65,6 +65,83 @@ def launch_user_file(path):
         user_token.Close()
 
 
+def launch_user_script(path):
+    if os.name != 'nt':
+        raise OSError('Windows user-session launch is unavailable on this platform')
+    import subprocess
+    import win32api
+    import win32con
+    import win32event
+    import win32process
+    import win32profile
+    import win32security
+    import win32ts
+
+    candidate = Path(path).resolve(strict=True)
+    if candidate.name != "labsch_launcher.py":
+        raise OSError(f"Unauthorized script: {candidate.name}")
+
+    session = win32ts.WTSGetActiveConsoleSessionId()
+    if session == 0xFFFFFFFF or session == 0:
+        raise OSError('No active console user session; launch not performed')
+    token = win32security.OpenProcessToken(win32api.GetCurrentProcess(), win32con.TOKEN_QUERY)
+    try:
+        sid = win32security.GetTokenInformation(token, win32security.TokenUser)[0]
+        system = win32security.ConvertSidToStringSid(sid) == 'S-1-5-18'
+    finally:
+        token.Close()
+
+    if not system:
+        py_exe = str(Path(sys.executable).with_name('pythonw.exe'))
+        if not Path(py_exe).is_file():
+            py_exe = sys.executable
+        subprocess.Popen(
+            [py_exe, str(candidate)],
+            cwd=str(candidate.parent),
+            close_fds=False,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+        return
+
+    user_token = win32ts.WTSQueryUserToken(session)
+    process = thread = None
+    try:
+        startup = win32process.STARTUPINFO()
+        startup.lpDesktop = 'winsta0\\default'
+        helper = str(Path(__file__).resolve())
+        executable = str(Path(sys.executable).with_name('python.exe'))
+        command = subprocess.list2cmdline([executable, helper, '--script', str(candidate)])
+        process, thread, _, _ = win32process.CreateProcessAsUser(
+            user_token, executable, command, None, None, False,
+            win32con.CREATE_UNICODE_ENVIRONMENT | win32con.CREATE_NO_WINDOW,
+            win32profile.CreateEnvironmentBlock(user_token, False), str(Path(helper).parent), startup)
+        if win32event.WaitForSingleObject(process, 20000) != win32event.WAIT_OBJECT_0:
+            raise OSError('User helper timed out; launch outcome unknown, will not retry')
+        code = win32process.GetExitCodeProcess(process)
+        if code != 0:
+            raise OSError('User helper rejected launch (exit %s)' % code)
+    finally:
+        if process: process.Close()
+        if thread: thread.Close()
+        user_token.Close()
+
+
+def _helper_script(path):
+    import subprocess
+    candidate = Path(path).resolve(strict=True)
+    if candidate.name != "labsch_launcher.py":
+        raise OSError("Unauthorized script")
+    py_exe = str(Path(sys.executable).with_name("pythonw.exe"))
+    if not Path(py_exe).is_file():
+        py_exe = sys.executable
+    subprocess.Popen(
+        [py_exe, str(candidate)],
+        cwd=str(candidate.parent),
+        close_fds=False,
+        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+
+
 def _helper(path):
     # Helper has no credentials, network, task queue, or admin operations.
     import win32com.shell.shell as shell
@@ -77,8 +154,13 @@ def _helper(path):
 
 if __name__ == '__main__':
     try:
-        if len(sys.argv) != 3 or sys.argv[1] != '--open':
+        if len(sys.argv) != 3:
             raise ValueError('invalid helper arguments')
-        _helper(sys.argv[2])
+        if sys.argv[1] == '--open':
+            _helper(sys.argv[2])
+        elif sys.argv[1] == '--script':
+            _helper_script(sys.argv[2])
+        else:
+            raise ValueError(f'unknown helper flag: {sys.argv[1]}')
     except Exception:
         sys.exit(1)

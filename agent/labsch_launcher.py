@@ -80,6 +80,8 @@ APPS = [
         "exe": "PacketTracer.exe",
         "keys": [r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\PacketTracer.exe"],
         "fallbacks": [
+            r"C:\Program Files\Cisco Packet Tracer 9.0.0\bin\PacketTracer.exe",
+            r"C:\Program Files\Cisco Packet Tracer 9.0\bin\PacketTracer.exe",
             r"C:\Program Files\Cisco Packet Tracer 8.2.2\bin\PacketTracer.exe",
             r"C:\Program Files\Cisco Packet Tracer 8.2.1\bin\PacketTracer.exe",
             r"C:\Program Files\Cisco Packet Tracer 8.2.0\bin\PacketTracer.exe",
