@@ -1,8 +1,22 @@
-## [0.4.0] - 2026-09-25
+## [0.4.0] - 2026-09-26
 
-### Unified install/upgrade/uninstall + lab-apps check & install (Win10 LTSC)
+### Stable release — Windows 10 LTSC unification, LabSCH Launcher (Kiosk), Web UI & lab-apps check/install
 
-Unify (audit Temp.rar `0.4.0-test13` vs repo):
+LabSCH Launcher (Kiosk Mode Steam-Style):
+- New `agent/labsch_launcher.py`: Fullscreen kiosk launcher with 6 default tiles (Word, Excel,
+  PowerPoint, Chrome, Packet Tracer, VirtualBox) launched detached via Windows App Paths registry.
+- Admin password-protected exit (SHA-256 hash) with always-on-top window focus.
+- Remote management via `launcher_start` and `launcher_stop` commands from server, CLI, and Web UI.
+- Anti-taskkill respawn guard on each heartbeat (90s grace period after admin password exit).
+- Elevated SYSTEM-to-user desktop session launching via pywin32 helper.
+- Yields launcher z-order when student opens allowed lab applications.
+
+Web Admin UI Enhancements (Cloudflare Pages):
+- Full static Cloudflare Pages dashboard for clients, config, profiles, commands, downloads, device controls, and events.
+- New **Launcher** tab (gamepad icon) to trigger kiosk mode per-PC or bulk online.
+- New **Agent** tab for tool calling, allowlist management, emergency kill-switch, and audit logging.
+
+Unified install/upgrade/uninstall (Win10 LTSC baseline):
 - Single install location `%ProgramFiles%\LabSCHAgent` (code) + `%ProgramData%\LabSCHAgent` (state).
 - Single runtime `runtime\python.exe`, single scheduled task `LabSCHAgent` (SYSTEM, IgnoreNew).
   Legacy tasks (`LabSCHAgentWatchdog`, `LabSCHAgentOnBoot`, `LabSCH*Notify`) + Run key removed by
