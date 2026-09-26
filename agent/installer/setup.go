@@ -25,7 +25,7 @@ const (
 	token     = `<your-api-token>`
 )
 
-const version = `0.4.0-test10`
+const version = `0.4.1`
 
 func isAdmin() bool {
 	cmd := exec.Command("net", "session")

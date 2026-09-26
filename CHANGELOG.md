@@ -1,3 +1,25 @@
+## [0.4.1] - 2026-09-26
+
+### Launcher user-session fix + version bump
+
+- fix(agent): `launcher_start` no longer fails with `OSError: User helper rejected
+  launch (exit 1)`. New `windows_launch.launch_user_script()` dispatcher launches
+  `labsch_launcher.py` directly in the logged-in user's console session
+  (`winsta0\default` via `CreateProcessAsUser` + `--script` helper, `pythonw.exe`
+  detached) instead of routing through the Public-Desktop-only `ShellExecute` path.
+- Launcher process detection now matches both `python.exe` and `pythonw.exe`.
+- New `agent/run_launcher.bat` manual launcher shortcut (shipped by install + upgrade).
+- Launcher tiles: added Packet Tracer 9.0 / 9.0.0 fallback paths.
+- Version unified to `0.4.1` across agent (`VERSION`, `version.py` fallback, HTTP
+  User-Agents, download protocol version), Workers (`APP_VERSION`), and installers
+  (`install.bat`, `upgrade.bat`, Go `setup.go`).
+
+### Verification status
+
+- Linux (VPS): `pytest` + Workers `vitest` pass.
+- Windows: requires on-PC check (`run_launcher.bat` double-click, then remote
+  `launcher_start`).
+
 ## [0.4.0] - 2026-09-26
 
 ### Stable release — Windows 10 LTSC unification, LabSCH Launcher (Kiosk), Web UI & lab-apps check/install

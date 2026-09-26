@@ -1,9 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
-title LabSCHAgent Installer v0.4.0 (unified)
+title LabSCHAgent Installer v0.4.1 (unified)
 
 :: ================================================================
-:: LabSCHAgent Installer - UNIFIED (v0.4.0)
+:: LabSCHAgent Installer - UNIFIED (v0.4.1)
 ::   Lokasi   : %ProgramFiles%\LabSCHAgent
 ::   Runtime  : %ProgramFiles%\LabSCHAgent\runtime\python.exe (SATU runtime)
 ::   Task     : LabSCHAgent (SATU scheduled task, SYSTEM, IgnoreNew)
@@ -31,14 +31,19 @@ pushd "%~dp0" >nul 2>&1
 :: [1] Konfigurasi + versi tunggal
 :: ----------------------------------------------------------------
 echo [1/7] Membaca konfigurasi...
-set "SERVER_URL=https://labsch-api.fajrisilmi6.workers.dev"
+set "SERVER_URL=https://labsch-api.<your-subdomain>.workers.dev"
 set "API_TOKEN=<your-uuid-token>"
+if "%SERVER_URL%"=="https://labsch-api.<your-subdomain>.workers.dev" (
+    echo ERROR: SERVER_URL masih placeholder. Isi URL Workers dulu.
+    popd >nul 2>&1
+    exit /b 2
+)
 if "%API_TOKEN%"=="<your-uuid-token>" (
     echo ERROR: API_TOKEN masih placeholder. Isi token enrollment dulu.
     popd >nul 2>&1
     exit /b 2
 )
-set "AGENT_VER=0.4.0"
+set "AGENT_VER=0.4.1"
 if exist VERSION set /p "AGENT_VER=" < VERSION
 echo       Server : %SERVER_URL%
 echo       Versi  : %AGENT_VER%

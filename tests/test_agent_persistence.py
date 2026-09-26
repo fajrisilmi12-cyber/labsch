@@ -41,7 +41,7 @@ def test_go_installer_uses_absolute_python_for_system_task():
 
 def test_go_installer_reports_current_bundle_version():
     text = (ROOT / "agent" / "installer" / "setup.go").read_text(encoding="utf-8")
-    assert 'const version = `0.4.0-test10`' in text
+    assert 'const version = `0.4.1`' in text
     assert '"version": "%s"' in text
 
 

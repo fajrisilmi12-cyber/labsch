@@ -24,7 +24,7 @@ class AgentClient:
         data = json.dumps(body).encode("utf-8") if body else None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("X-Agent-Token", self.api_token)
-        req.add_header("User-Agent", "LabSCHAgent/0.4.0")
+        req.add_header("User-Agent", "LabSCHAgent/0.4.1")
         if data:
             req.add_header("Content-Type", "application/json")
         try:
@@ -117,7 +117,7 @@ class AgentClient:
             return True
         return False
 
-    def get_pending_downloads(self, version="0.4.0-test1") -> Optional[list]:
+    def get_pending_downloads(self, version="0.4.1") -> Optional[list]:
         """GET /api/downloads/pending — download tasks for this client.
 
         Returns the protocol-gated task list or None on error. Never raises.

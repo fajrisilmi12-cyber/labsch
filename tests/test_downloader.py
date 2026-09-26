@@ -142,7 +142,7 @@ def test_safe_executor_rejects_shell_and_script_extensions(tmp_path):
 
 def test_authorization_header_is_not_forwarded_to_hosts():
     opener = downloader.build_download_opener("secret-token")
-    assert opener.addheaders == [("User-Agent", "LabSCHDownloader/0.4.0")]
+    assert opener.addheaders == [("User-Agent", "LabSCHDownloader/0.4.1")]
 
 
 def test_atomic_same_volume_rename(tmp_path):
@@ -186,9 +186,9 @@ def test_registry_entry_removed_for_new_task_keeps_other_tasks(tmp_path):
 
 def test_build_download_opener_user_agent_only():
     opener = downloader.build_download_opener(None)
-    assert opener.addheaders == [("User-Agent", "LabSCHDownloader/0.4.0")]
+    assert opener.addheaders == [("User-Agent", "LabSCHDownloader/0.4.1")]
     opener2 = downloader.build_download_opener("any")
-    assert opener2.addheaders == [("User-Agent", "LabSCHDownloader/0.4.0")]
+    assert opener2.addheaders == [("User-Agent", "LabSCHDownloader/0.4.1")]
 
 
 def test_download_stream_aborts_on_oversize(tmp_path):

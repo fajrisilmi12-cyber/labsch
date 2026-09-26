@@ -8,7 +8,7 @@ from here instead of hard-coding a version string::
 """
 from pathlib import Path
 
-_FALLBACK = "0.4.0"
+_FALLBACK = "0.4.1"
 
 
 def get_version() -> str:

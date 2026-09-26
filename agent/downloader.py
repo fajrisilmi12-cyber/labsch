@@ -30,7 +30,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-USER_AGENT = "LabSCHDownloader/0.4.0"
+USER_AGENT = "LabSCHDownloader/0.4.1"
 MAX_REDIRECTS = 5
 CHUNK = 64 * 1024
 JITTER_MAX = 30
@@ -561,7 +561,7 @@ class DownloadDispatcher:
 
     def _poll(self):
         try:
-            tasks = self.client.get_pending_downloads(version="0.4.0-test1")
+            tasks = self.client.get_pending_downloads(version="0.4.1")
             self._run(tasks or [])
         except Exception as exc:
             print("[downloads] poll failed:", type(exc).__name__)
@@ -594,7 +594,7 @@ class DownloadDispatcher:
                     return
                 # Revalidate cancellation after jitter, immediately before work.
                 if hasattr(self.client, 'get_pending_downloads'):
-                    current = self.client.get_pending_downloads(version="0.4.0-test1")
+                    current = self.client.get_pending_downloads(version="0.4.1")
                     if current is None or not any(t.get('task_id') == tid for t in current):
                         continue
                 claim_task(self.root, tid, task.get('sha256'))
